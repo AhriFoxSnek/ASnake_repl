@@ -2,9 +2,12 @@ execGlobal = globals()
 from ASnake import build, ASnakeVersion
 from io import StringIO
 from contextlib import redirect_stdout
-from textwrap import wrap
 
 import platform  # temp
+
+
+debug: bool = True # enables file output of useful info for debugging
+
 
 if 'windows' in platform.system().lower():
     try:
@@ -126,7 +129,10 @@ keyword_list = ('__build_class__', '__debug__', '__doc__', '__import__', '__load
 
                 # ASnake keywords
                 'case', 'do', 'does', 'end', 'equals', 'greater', 'less', 'loop', 'minus', 'nothing', 'of', 'plus',
-                'power', 'remainder', 'than', 'then', 'times', 'until'
+                'power', 'remainder', 'than', 'then', 'times', 'until',
+
+                # Environment
+                'ASnakeVersion','build',
                 )
 lookup = {}
 for name in keyword_list:
@@ -143,7 +149,9 @@ def main(stdscr):
     curses.echo()
     stdout = StringIO()
 
-    extra = ''  # debug var
+    # v debug vars v
+    extra = ''
+    debugFileOut=False
 
     after_appending = 0
     lastCursorX: int
@@ -171,12 +179,14 @@ def main(stdscr):
             codePosition = 0
 
         if c == curses.KEY_LEFT:
+            debugFileOut = True
             if not x < 5:
                 stdscr.move(y, x - 1)
                 if codePosition <= codeLength and x - PREFIXlen <= codePosition:
                     codePosition -= 1
 
         elif c == curses.KEY_RIGHT:
+            debugFileOut = True
             if codePosition < codeLength:
                 stdscr.addstr(code[codePosition])
                 codePosition += 1
@@ -184,6 +194,7 @@ def main(stdscr):
 
         # todo -> bash history
         elif c == curses.KEY_UP:
+            debugFileOut = True
             if history_idx > 0:
                 # earlier history
                 if history_idx > len(bash_history):
@@ -197,6 +208,7 @@ def main(stdscr):
                 history_idx = 0
 
         elif c == curses.KEY_DOWN:
+            debugFileOut = True
             if history_idx < len(bash_history) - 1:
                 # later history
                 history_idx += 1
@@ -211,6 +223,7 @@ def main(stdscr):
 
         # tab -> for auto-complete feature
         elif c == ord('\t'):
+            debugFileOut = True
             # call get_hint function to return the word which fits :n-index of `code` variable
             after_appending = x + 1
             codeSplit = code.split()
@@ -236,7 +249,7 @@ def main(stdscr):
                 stdscr.move(y, PREFIXlen)
 
         elif c in {curses.KEY_BACKSPACE, 127, 8}:
-            # l = x - 1
+            debugFileOut = True
             if not x < 4:
                 clear_suggestion(stdscr=stdscr, start=lastCursorX, end=width, step=1, y=y)
                 stdscr.delch(y, x)
@@ -244,21 +257,21 @@ def main(stdscr):
                 if 0 < codePosition < len(code) - 1:
                     tmpStart = codePosition - 1 if codePosition - 1 > 0 else 0
                     code = code[:tmpStart] + code[codePosition:]
-                    # display_hint(stdscr, y, x, code, 0, 0, False, 0)
                 else:
                     code = code[:-1]
-                    file_out("a", get_hint(code))
                 codePosition -= 1
                 display_hint(stdscr, y, x, code, 0, 0, False, 0)
             else:
                 stdscr.move(y, x + 1)
 
         elif c in {curses.KEY_ENTER, 10, 13}:
-
+            debugFileOut = True
             if y >= height - 1:
                 stdscr.clear()
                 stdscr.refresh()
             else:
+                # evaluate the line/block
+
                 history_idx += 2
                 bash_history.append(code)
                 delete_line(stdscr=stdscr, start=stdscr.getmaxyx()[0], end=PREFIXlen + codePosition - 1, step=-1, y=y)
@@ -274,18 +287,15 @@ def main(stdscr):
                         stdscr.addstr(error, curses.color_pair(3))
                         stdscr.move(y + error.count('\n') + 2, 0)
 
-                output = stdout.getvalue()
-                out_arr = wrap(output, width=width)
-                if out_arr:
-                    out_arr.append("\n")
-
-                for i in range(len(out_arr)):
+                output = list(stdout.getvalue())
+                for i in range(len(output)):
                     y, _ = stdscr.getyx()
                     if y >= height - 1:
                         stdscr.clear()
-                        stdscr.addstr(f"{out_arr[i]}")
+                        stdscr.move(0, 0)
+                        stdscr.addstr(f"{output[i]}")
                     else:
-                        stdscr.addstr(f"{out_arr[i]}")
+                        stdscr.addstr(f"{output[i]}")
 
                 stdout = StringIO()
                 stdscr.addstr(PREFIX, curses.color_pair(2))
@@ -294,6 +304,7 @@ def main(stdscr):
                 stdscr.refresh()
 
         else:
+            debugFileOut = True
             if codePosition == len(code):
                 code += chr(c)
                 codePosition += 1
@@ -314,10 +325,8 @@ def main(stdscr):
                 stdscr.addstr(code[codePosition:])
                 stdscr.move(y, x)
                 stdscr.refresh()
-
-        # file_out('w', code,f"{codePosition}/{len(code)} x={x} y={y} bi={history_idx}",extra)
-
-    stdscr.refresh()
+        if debug and debugFileOut:
+            file_out('w', code,f"{codePosition}/{len(code)} x={x} y={y} bi={history_idx}",extra)
 
 
 if __name__ == "__main__":
