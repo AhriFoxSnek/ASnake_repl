@@ -8,8 +8,8 @@ import platform  # temp
 
 debug: bool = True # enables file output of useful info for debugging
 
-
-if 'windows' in platform.system().lower():
+OS = platform.system().lower()
+if 'windows' in OS:
     try:
         import curses
     except ModuleNotFoundError:
@@ -69,8 +69,11 @@ def display_hint(stdscr, y: int, x: int, code: str, lastCursorX: int, after_appe
         return False
     for i in range(after_appending, lastCursorX, -1):
         stdscr.delch(y, i)
-    stdscr.addstr(y, x + len(code.split()[-1][len(code):]), get_hint(code.split()[-1])[len(code):],
-                  curses.color_pair(1) | curses.A_DIM)
+    if 'windows' in OS:
+        color = curses.color_pair(4)
+    else:
+        color = curses.color_pair(1) | curses.A_DIM
+    stdscr.addstr(y, x + len(code.split()[-1][len(code):]), get_hint(code.split()[-1])[len(code):], color)
     stdscr.move(y, x)
     return True
 
@@ -132,7 +135,7 @@ keyword_list = ('__build_class__', '__debug__', '__doc__', '__import__', '__load
                 'power', 'remainder', 'than', 'then', 'times', 'until',
 
                 # Environment
-                'ASnakeVersion','build',
+                'ASnakeVersion','build','OS'
                 )
 lookup = {}
 for name in keyword_list:
@@ -145,7 +148,9 @@ def main(stdscr):
     curses.use_default_colors()
     curses.init_pair(1, curses.COLOR_WHITE, -1)  # for usual text
     curses.init_pair(2, curses.COLOR_CYAN, -1)  # for pretty prefix
-    curses.init_pair(3, curses.COLOR_RED, -1)
+    curses.init_pair(3, curses.COLOR_RED, -1) # for scary error
+    if 'windows' in OS:
+        curses.init_pair(4, curses.COLOR_YELLOW, -1)
     curses.echo()
     stdout = StringIO()
 
