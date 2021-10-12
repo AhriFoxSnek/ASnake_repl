@@ -6,7 +6,7 @@ from contextlib import redirect_stdout
 import platform  # temp
 
 
-debug: bool = True # enables file output of useful info for debugging
+debug: bool = False # enables file output of useful info for debugging
 
 OS = platform.system().lower()
 if 'windows' in OS:
@@ -95,7 +95,7 @@ def buildCode(code, variableInformation, metaInformation):
                    outputInternals=True, metaInformation=metaInformation)
     if isinstance(output, str):
         # ASnake Syntax Error
-        return (output, variableInformation)
+        return (output, variableInformation, metaInformation)
     else:
         if variableInformation != output[2]:
             variableInformation = output[2]
@@ -185,10 +185,38 @@ def main(stdscr):
 
         if c == curses.KEY_LEFT:
             debugFileOut = True
-            if not x < 5:
+            if not x < PREFIXlen+1:
                 stdscr.move(y, x - 1)
                 if codePosition <= codeLength and x - PREFIXlen <= codePosition:
                     codePosition -= 1
+
+        elif c == 546: # CTRL_LEFT
+            debugFileOut = True
+            if not x < PREFIXlen+1 and codePosition > 0:
+                while code[codePosition-1] == ' ':
+                    if codePosition == 0:
+                        break
+                    codePosition -= 1
+                while code[codePosition-1] != ' ':
+                    if codePosition == 0:
+                        break
+                    codePosition -= 1
+                stdscr.move(y, PREFIXlen+codePosition)
+
+        elif c == 561: # CTRL_RIGHT
+            debugFileOut = True
+            if codePosition < codeLength:
+                while code[codePosition-1] == ' ':
+                    codePosition += 1
+                    if codePosition > codeLength:
+                        codePosition = codeLength
+                        break
+                while code[codePosition-1] != ' ':
+                    codePosition += 1
+                    if codePosition > codeLength:
+                        codePosition=codeLength
+                        break
+                stdscr.move(y, PREFIXlen+codePosition)
 
         elif c == curses.KEY_RIGHT:
             debugFileOut = True
@@ -283,7 +311,6 @@ def main(stdscr):
                 stdscr.move(y + 1, 0)
                 compiledCode, variableInformation, metaInformation = buildCode(code, variableInformation,
                                                                                metaInformation)
-                # extra=metaInformation
                 with redirect_stdout(stdout):
                     try:
                         exec(compiledCode, execGlobal)
