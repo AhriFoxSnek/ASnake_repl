@@ -6,10 +6,11 @@ from contextlib import redirect_stdout
 import platform  # temp
 
 
-debug: bool = False # enables file output of useful info for debugging
+debug: bool = True # enables file output of useful info for debugging
 
 OS = platform.system().lower()
 if 'windows' in OS:
+    OS = 'windows'
     try:
         import curses
     except ModuleNotFoundError:
@@ -69,7 +70,7 @@ def display_hint(stdscr, y: int, x: int, code: str, lastCursorX: int, after_appe
         return False
     for i in range(after_appending, lastCursorX, -1):
         stdscr.delch(y, i)
-    if 'windows' in OS:
+    if 'windows' == OS:
         color = curses.color_pair(4)
     else:
         color = curses.color_pair(1) | curses.A_DIM
@@ -144,12 +145,11 @@ del keyword_list
 
 
 def main(stdscr):
-    # stdscr.nodelay(10)
     curses.use_default_colors()
     curses.init_pair(1, curses.COLOR_WHITE, -1)  # for usual text
     curses.init_pair(2, curses.COLOR_CYAN, -1)  # for pretty prefix
     curses.init_pair(3, curses.COLOR_RED, -1) # for scary error
-    if 'windows' in OS:
+    if 'windows' == OS:
         curses.init_pair(4, curses.COLOR_YELLOW, -1)
     curses.echo()
     stdout = StringIO()
@@ -319,15 +319,18 @@ def main(stdscr):
                         stdscr.addstr(error, curses.color_pair(3))
                         stdscr.move(y + error.count('\n') + 2, 0)
 
+                if compiledCode.startswith(f'# ASnake {ASnakeVersion} ERROR'):
+                    ASError = True
+                else:
+                    ASError = False
+
                 output = list(stdout.getvalue())
                 for i in range(len(output)):
                     y, _ = stdscr.getyx()
                     if y >= height - 1:
                         stdscr.clear()
                         stdscr.move(0, 0)
-                        stdscr.addstr(f"{output[i]}")
-                    else:
-                        stdscr.addstr(f"{output[i]}")
+                    stdscr.addstr(f"{output[i]}", curses.color_pair(3) if ASError else curses.color_pair(1))
 
                 stdout = StringIO()
                 stdscr.addstr(PREFIX, curses.color_pair(2))
