@@ -6,7 +6,7 @@ from contextlib import redirect_stdout
 import platform  # temp
 
 
-debug: bool = True # enables file output of useful info for debugging
+debug: bool = False # enables file output of useful info for debugging
 
 OS = platform.system().lower()
 if 'windows' in OS:
@@ -34,7 +34,7 @@ else:
 del sys, compileDict, platform
 
 # constants
-ReplVersion = 'v0.4.0'
+ReplVersion = 'v0.4.1'
 PREFIX = ">>> "
 PREFIXlen = len(PREFIX)
 
@@ -159,7 +159,7 @@ def main(stdscr):
     debugFileOut=False
 
     after_appending = 0
-    lastCursorX: int
+    lastCursorX: int = 4
     hinted: bool = False
 
     code = ''
@@ -170,7 +170,6 @@ def main(stdscr):
     stdscr.addstr(PREFIX, curses.color_pair(2))
 
     history_idx = 0
-
     while True:
         c = stdscr.getch()
         codeLength = len(code)
@@ -296,6 +295,9 @@ def main(stdscr):
                 display_hint(stdscr, y, x, code, 0, 0, False, 0)
             else:
                 stdscr.move(y, x + 1)
+            if code == '' and x <= 4:
+                # if no characters, clear suggestion
+                clear_suggestion(stdscr=stdscr, start=4, end=width, step=1, y=y)
 
         elif c in {curses.KEY_ENTER, 10, 13}:
             debugFileOut = True
@@ -355,11 +357,11 @@ def main(stdscr):
                 else:
                     code = code[:codePosition] + chr(c) + code[codePosition:]
                     codePosition += 1
-
                 delete_line(stdscr=stdscr, start=x - 1 + len(code[codePosition:]), end=x - 1, step=-1, y=y)
                 stdscr.addstr(code[codePosition:])
                 stdscr.move(y, x)
                 stdscr.refresh()
+
         if debug and debugFileOut:
             file_out('w', code,f"{codePosition}/{len(code)} x={x} y={y} bi={history_idx}",extra)
 
