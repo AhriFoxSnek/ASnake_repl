@@ -3,7 +3,7 @@ from ASnake import build, ASnakeVersion
 from io import StringIO
 from contextlib import redirect_stdout
 
-import platform  # temp
+import platform  # temporary import
 
 
 debug: bool = False # enables file output of useful info for debugging
@@ -35,7 +35,7 @@ else:
 del sys, compileDict, platform
 
 # constants
-ReplVersion = 'v0.4.2'
+ReplVersion = 'v0.4.3'
 PREFIX = ">>> "
 PREFIXlen = len(PREFIX)
 
@@ -224,20 +224,22 @@ def main(stdscr):
                 codePosition += 1
             stdscr.move(y, x + 1)
 
-        # todo -> bash history
+
         elif c == curses.KEY_UP:
             debugFileOut = True
-            if history_idx > 0:
+            if bash_history:
                 # earlier history
-                if history_idx > len(bash_history):
-                    history_idx = len(bash_history)
-                history_idx -= 1
+                if history_idx == len(bash_history):
+                    history_idx -= 1
+                    if history_idx < 0: history_idx = 0
+                    code = bash_history[-1]
+                else:
+                    history_idx -= 1
+                    if history_idx < 0: history_idx=0
+                    code = bash_history[history_idx]
                 delete_line(stdscr=stdscr, start=x, end=PREFIXlen - 1, step=-1, y=y)
                 stdscr.addstr(bash_history[history_idx])
-                code = bash_history[history_idx]
                 codePosition += len(bash_history[history_idx])
-            else:
-                history_idx = 0
 
         elif c == curses.KEY_DOWN:
             debugFileOut = True
@@ -306,9 +308,9 @@ def main(stdscr):
                 stdscr.refresh()
             else:
                 # evaluate the line/block
-
-                history_idx += 2
-                bash_history.append(code)
+                if code and (not bash_history or code != bash_history[-1]):
+                    bash_history.append(code)
+                history_idx = len(bash_history)
                 delete_line(stdscr=stdscr, start=stdscr.getmaxyx()[0], end=PREFIXlen + codePosition - 1, step=-1, y=y)
                 if 'windows' == OS:
                     stdscr.move(y, 0)
@@ -364,7 +366,6 @@ def main(stdscr):
                 stdscr.addstr(code[codePosition:])
                 stdscr.move(y, x)
                 stdscr.refresh()
-
         if debug and debugFileOut:
             file_out('w', code,f"{codePosition}/{len(code)} x={x} y={y} bi={history_idx}",extra)
 
