@@ -21,9 +21,10 @@ else:
 
 # v temporary
 import sys
-
 compileDict = {'CPython': 'Python', 'PyPy': 'PyPy3'}
 # ^ temporary
+
+pythonVersion=f"{sys.version_info.major}.{sys.version_info.minor}" # run-time constant
 
 if hasattr(sys, "pyston_version_info"):
     # ^ Pyston dev's suggested this: https://github.com/pyston/pyston/issues/39
@@ -34,7 +35,7 @@ else:
 del sys, compileDict, platform
 
 # constants
-ReplVersion = 'v0.4.1'
+ReplVersion = 'v0.4.2'
 PREFIX = ">>> "
 PREFIXlen = len(PREFIX)
 
@@ -89,10 +90,9 @@ def clear_suggestion(stdscr, start, end, step, y):
     stdscr.delch(y, start)
     stdscr.move(y, start)
 
-
 def buildCode(code, variableInformation, metaInformation):
     output = build(code, comment=False, optimize=False, debug=False, compileTo=compileTo,
-                   pythonVersion=3.9, enforceTyping=False, variableInformation=variableInformation,
+                   pythonVersion=pythonVersion, enforceTyping=False, variableInformation=variableInformation,
                    outputInternals=True, metaInformation=metaInformation)
     if isinstance(output, str):
         # ASnake Syntax Error
@@ -136,7 +136,7 @@ keyword_list = ('__build_class__', '__debug__', '__doc__', '__import__', '__load
                 'power', 'remainder', 'than', 'then', 'times', 'until',
 
                 # Environment
-                'ASnakeVersion','build','OS'
+                'ASnakeVersion','build','OS','pythonVersion'
                 )
 lookup = {}
 for name in keyword_list:
@@ -310,7 +310,10 @@ def main(stdscr):
                 history_idx += 2
                 bash_history.append(code)
                 delete_line(stdscr=stdscr, start=stdscr.getmaxyx()[0], end=PREFIXlen + codePosition - 1, step=-1, y=y)
-                stdscr.move(y + 1, 0)
+                if 'windows' == OS:
+                    stdscr.move(y, 0)
+                else:
+                    stdscr.move(y + 1, 0)
                 compiledCode, variableInformation, metaInformation = buildCode(code, variableInformation,
                                                                                metaInformation)
                 with redirect_stdout(stdout):
