@@ -1,7 +1,9 @@
 execGlobal = globals()
 from ASnake import build, ASnakeVersion
-from io import StringIO
-from contextlib import redirect_stdout
+from os import listdir, remove, getcwd
+from subprocess import Popen
+from subprocess import PIPE
+from time import sleep
 
 import platform  # temporary import
 
@@ -32,6 +34,7 @@ if hasattr(sys, "pyston_version_info"):
     compileTo = 'Pyston'
 else:
     compileTo = compileDict[platform.python_implementation()]
+pyCall='"'+sys.executable+'"'
 del sys, compileDict, platform
 
 # constants
@@ -129,14 +132,14 @@ keyword_list = ('__build_class__', '__debug__', '__doc__', '__import__', '__load
                 'SyntaxError', 'SyntaxWarning', 'SystemError', 'SystemExit', 'TabError', 'TimeoutError', 'True', 'try',
                 'tuple', 'type', 'TypeError', 'UnboundLocalError', 'UnicodeDecodeError', 'UnicodeEncodeError',
                 'UnicodeError', 'UnicodeTranslateError', 'UnicodeWarning', 'UserWarning', 'ValueError', 'vars',
-                'Warning', 'while', 'with', 'yield', 'ZeroDivisionError', 'zip',
+                'Warning', 'while', 'with', 'yield', 'ZeroDivisionError', 'zip', 'case', 'match',
 
                 # ASnake keywords
-                'case', 'do', 'does', 'end', 'equals', 'greater', 'less', 'loop', 'minus', 'nothing', 'of', 'plus',
+                'do', 'does', 'end', 'equals', 'greater', 'less', 'loop', 'minus', 'nothing', 'of', 'plus',
                 'power', 'remainder', 'than', 'then', 'times', 'until',
 
                 # Environment
-                'ASnakeVersion','build','OS','pythonVersion'
+                'listdir','remove','sleep'
                 )
 lookup = {}
 for name in keyword_list:
@@ -144,7 +147,11 @@ for name in keyword_list:
 del keyword_list
 
 
+
 def main(stdscr):
+    child = Popen(f'{pyCall} -u executionEnvironment.py', stdout=PIPE, cwd=getcwd(), shell=True)
+    exitByte = chr(999999)
+    errorByte = chr(999998)
     curses.use_default_colors()
     curses.init_pair(1, curses.COLOR_WHITE, -1)  # for usual text
     curses.init_pair(2, curses.COLOR_CYAN, -1)  # for pretty prefix
@@ -152,7 +159,6 @@ def main(stdscr):
     if 'windows' == OS:
         curses.init_pair(4, curses.COLOR_YELLOW, -1)
     curses.echo()
-    stdout = StringIO()
 
     # v debug vars v
     extra = ''
@@ -161,6 +167,7 @@ def main(stdscr):
     after_appending = 0
     lastCursorX: int = 4
     hinted: bool = False
+    firstLine: bool = True
 
     code = ''
     variableInformation = {}
@@ -307,39 +314,65 @@ def main(stdscr):
                 stdscr.clear()
                 stdscr.refresh()
             else:
-                # evaluate the line/block
-                if code and (not bash_history or code != bash_history[-1]):
-                    bash_history.append(code)
-                history_idx = len(bash_history)
-                delete_line(stdscr=stdscr, start=stdscr.getmaxyx()[0], end=PREFIXlen + codePosition - 1, step=-1, y=y)
-                if 'windows' == OS:
-                    stdscr.move(y, 0)
+                if code:
+                    # evaluate the line/block
+                    if code and (not bash_history or code != bash_history[-1]):
+                        bash_history.append(code)
+                    history_idx = len(bash_history)
+                    delete_line(stdscr=stdscr, start=stdscr.getmaxyx()[0], end=PREFIXlen + codePosition - 1, step=-1, y=y)
+
+                    compiledCode, variableInformation, metaInformation = buildCode(code, variableInformation,
+                                                                                   metaInformation)
+                    if firstLine:
+                        stdscr.move(y+1, 0)
+                        firstLine = False
+
+                    if compiledCode.startswith(f'# ASnake {ASnakeVersion} ERROR'):
+                        ASError = True
+                    else:
+                        ASError = False
+
+                    with open('ASnakeREPLCommand.txt','w') as f:
+                        f.write(compiledCode)
+
+                    addByte=False
+                    readChildStdout=child.stdout.read
+                    while True:
+                        # show output by character
+                        if child.poll() is None: exit()
+                        elif addByte:
+                            output += readChildStdout(1)
+                            addByte=False
+                        else:
+                            output = readChildStdout(1)
+                        try:
+                            output = output.decode()
+                        except UnicodeDecodeError:
+                            addByte=True
+                            continue
+                        if output:
+                            if output in exitByte and 'ASnakeREPLCommand.txt' not in listdir():
+                                break
+                            elif output == errorByte:
+                                ASError = True
+                                continue
+                        else:
+                            continue
+
+                        for i in range(len(output)):
+                            stdscr.addstr(f"{output[i]}", curses.color_pair(3) if ASError else curses.color_pair(1))
+                            y, x = stdscr.getyx()
+                            if y >= height - 1:
+                                stdscr.clear()
+                                stdscr.move(0, 0)
+                        stdscr.refresh()
+                    child.stdout.flush()
                 else:
-                    stdscr.move(y + 1, 0)
-                compiledCode, variableInformation, metaInformation = buildCode(code, variableInformation,
-                                                                               metaInformation)
-                with redirect_stdout(stdout):
-                    try:
-                        exec(compiledCode, execGlobal)
-                    except Exception as e:
-                        error = compileTo + ' ' + e.__class__.__name__ + ':\n' + str(e)
-                        stdscr.addstr(error, curses.color_pair(3))
-                        stdscr.move(y + error.count('\n') + 2, 0)
+                    if 'windows' == OS:
+                        stdscr.move(y, 0)
+                    else:
+                        stdscr.move(y + 1, 0)
 
-                if compiledCode.startswith(f'# ASnake {ASnakeVersion} ERROR'):
-                    ASError = True
-                else:
-                    ASError = False
-
-                output = list(stdout.getvalue())
-                for i in range(len(output)):
-                    y, _ = stdscr.getyx()
-                    if y >= height - 1:
-                        stdscr.clear()
-                        stdscr.move(0, 0)
-                    stdscr.addstr(f"{output[i]}", curses.color_pair(3) if ASError else curses.color_pair(1))
-
-                stdout = StringIO()
                 stdscr.addstr(PREFIX, curses.color_pair(2))
                 code = ''
                 codePosition = 0
@@ -372,5 +405,8 @@ def main(stdscr):
 
 if __name__ == "__main__":
     perform_module_check()
-    curses.wrapper(main)
-
+    try:
+        curses.wrapper(main)
+    except KeyboardInterrupt:
+        if 'ASnakeREPLCommand.txt' in listdir():
+            remove('ASnakeREPLCommand.txt')
