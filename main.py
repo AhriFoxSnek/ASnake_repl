@@ -1,6 +1,6 @@
 execGlobal = globals()
 from ASnake import build, ASnakeVersion
-from os import listdir, remove, getcwd
+from os import listdir, remove, getcwd, environ
 from subprocess import Popen
 from subprocess import PIPE
 from time import sleep
@@ -13,6 +13,7 @@ debug: bool = False # enables file output of useful info for debugging
 OS = platform.system().lower()
 if 'windows' in OS:
     OS = 'windows'
+    environ['PYTHONIOENCODING'] = 'UTF8'
     try:
         import curses
     except ModuleNotFoundError:
@@ -38,7 +39,7 @@ pyCall='"'+sys.executable+'"'
 del sys, compileDict, platform
 
 # constants
-ReplVersion = 'v0.4.3'
+ReplVersion = 'v0.4.4'
 PREFIX = ">>> "
 PREFIXlen = len(PREFIX)
 
@@ -158,6 +159,7 @@ def main(stdscr):
     curses.init_pair(3, curses.COLOR_RED, -1) # for scary error
     if 'windows' == OS:
         curses.init_pair(4, curses.COLOR_YELLOW, -1)
+    isWindows = True if OS == 'windows' else False
     curses.echo()
 
     # v debug vars v
@@ -323,9 +325,6 @@ def main(stdscr):
 
                     compiledCode, variableInformation, metaInformation = buildCode(code, variableInformation,
                                                                                    metaInformation)
-                    if firstLine:
-                        stdscr.move(y+1, 0)
-                        firstLine = False
 
                     if compiledCode.startswith(f'# ASnake {ASnakeVersion} ERROR'):
                         ASError = True
@@ -335,11 +334,26 @@ def main(stdscr):
                     with open('ASnakeREPLCommand.txt','w') as f:
                         f.write(compiledCode)
 
+                    if firstLine:
+                        if isWindows:
+                            stdscr.move(y, 0)
+                        else:
+                            stdscr.move(y+1, 0)
+                    elif isWindows:
+                        stdscr.move(y-1, width-1)
+                    firstLine = False
+
+
+
                     addByte=False
                     readChildStdout=child.stdout.read
+                    output=''
                     while True:
                         # show output by character
-                        if child.poll() is None: exit()
+                        if child.poll() is not None:
+                            if 'ASnakeREPLCommand.txt' in listdir():
+                                remove('ASnakeREPLCommand.txt')
+                            exit()
                         elif addByte:
                             output += readChildStdout(1)
                             addByte=False
@@ -354,8 +368,11 @@ def main(stdscr):
                             if output in exitByte and 'ASnakeREPLCommand.txt' not in listdir():
                                 break
                             elif output == errorByte:
+                                output = ''
                                 ASError = True
                                 continue
+                            elif isWindows and output == '\r':
+                                output=''
                         else:
                             continue
 
@@ -368,7 +385,7 @@ def main(stdscr):
                         stdscr.refresh()
                     child.stdout.flush()
                 else:
-                    if 'windows' == OS:
+                    if isWindows:
                         stdscr.move(y, 0)
                     else:
                         stdscr.move(y + 1, 0)
@@ -377,7 +394,8 @@ def main(stdscr):
                 code = ''
                 codePosition = 0
                 stdscr.refresh()
-
+        elif c == 3: # ctrl c
+            if isWindows: raise KeyboardInterrupt
         else:
             debugFileOut = True
             if codePosition == len(code):
@@ -405,8 +423,10 @@ def main(stdscr):
 
 if __name__ == "__main__":
     perform_module_check()
+    if 'ASnakeREPLCommand.txt' in listdir():
+        remove('ASnakeREPLCommand.txt')
     try:
         curses.wrapper(main)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, BrokenPipeError):
         if 'ASnakeREPLCommand.txt' in listdir():
             remove('ASnakeREPLCommand.txt')
