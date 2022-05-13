@@ -1,5 +1,9 @@
 execGlobal = globals()
-from ASnake import build, ASnakeVersion
+try:
+    from ASnake import build, ASnakeVersion
+except ModuleNotFoundError:
+    print("ASnake not found. Install latest ASnake.py from https://github.com/AhriFoxSnek/ASnake")
+    exit()
 from os import listdir, remove, getcwd, environ
 from subprocess import Popen
 from subprocess import PIPE
@@ -39,17 +43,9 @@ pyCall='"'+sys.executable+'"'
 del sys, compileDict, platform
 
 # constants
-ReplVersion = 'v0.4.4'
+ReplVersion = 'v0.4.5'
 PREFIX = ">>> "
 PREFIXlen = len(PREFIX)
-
-
-# check for ASnake as it can't be appended in requirements.txt (for now)
-def perform_module_check():
-    import sys
-    if not 'ASnake' in sys.modules:
-        print("Install latest ASnake.py from https://github.com/AhriFoxSnek/ASnake")
-        exit()
 
 
 # for debugging only
@@ -348,9 +344,10 @@ def main(stdscr):
                     addByte=False
                     readChildStdout=child.stdout.read
                     output=''
+                    childPoll=child.poll
                     while True:
                         # show output by character
-                        if child.poll() is not None:
+                        if childPoll() is not None:
                             if 'ASnakeREPLCommand.txt' in listdir():
                                 remove('ASnakeREPLCommand.txt')
                             exit()
@@ -365,7 +362,7 @@ def main(stdscr):
                             addByte=True
                             continue
                         if output:
-                            if output in exitByte and 'ASnakeREPLCommand.txt' not in listdir():
+                            if output == exitByte and 'ASnakeREPLCommand.txt' not in listdir():
                                 break
                             elif output == errorByte:
                                 output = ''
@@ -422,7 +419,6 @@ def main(stdscr):
 
 
 if __name__ == "__main__":
-    perform_module_check()
     if 'ASnakeREPLCommand.txt' in listdir():
         remove('ASnakeREPLCommand.txt')
     try:
