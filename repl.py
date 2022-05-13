@@ -1,4 +1,3 @@
-execGlobal = globals()
 try:
     from ASnake import build, ASnakeVersion
 except ModuleNotFoundError:
@@ -46,6 +45,8 @@ del sys, compileDict, platform
 ReplVersion = 'v0.4.5'
 PREFIX = ">>> "
 PREFIXlen = len(PREFIX)
+INDENT = "... "
+INDENTlen = len(INDENT)
 
 
 # for debugging only
@@ -149,6 +150,7 @@ def main(stdscr):
     child = Popen(f'{pyCall} -u executionEnvironment.py', stdout=PIPE, cwd=getcwd(), shell=True)
     exitByte = chr(999999)
     errorByte = chr(999998)
+    setEnterKeys = {curses.KEY_ENTER, 10, 13}
     curses.use_default_colors()
     curses.init_pair(1, curses.COLOR_WHITE, -1)  # for usual text
     curses.init_pair(2, curses.COLOR_CYAN, -1)  # for pretty prefix
@@ -177,6 +179,10 @@ def main(stdscr):
     history_idx = 0
     while True:
         c = stdscr.getch()
+        # shift left 393 ; shift right 402
+        # ctrl left 546 ; ctrl right 561
+        # alt tab 27
+        # backslash 92
         codeLength = len(code)
         # notetoself: x and y are cursor position
         y, x = stdscr.getyx()
@@ -306,18 +312,22 @@ def main(stdscr):
                 # if no characters, clear suggestion
                 clear_suggestion(stdscr=stdscr, start=4, end=width, step=1, y=y)
 
-        elif c in {curses.KEY_ENTER, 10, 13}:
+        elif c in setEnterKeys:
             debugFileOut = True
             if y >= height - 1:
                 stdscr.clear()
                 stdscr.refresh()
+            elif code[-1]=='\\':
+                stdscr.move(y+1, 0)
+                stdscr.addstr(INDENT, curses.color_pair(2))
+                lastCursorX = INDENTlen
             else:
                 if code:
                     # evaluate the line/block
                     if code and (not bash_history or code != bash_history[-1]):
                         bash_history.append(code)
                     history_idx = len(bash_history)
-                    delete_line(stdscr=stdscr, start=stdscr.getmaxyx()[0], end=PREFIXlen + codePosition - 1, step=-1, y=y)
+                    delete_line(stdscr=stdscr, start=height, end=PREFIXlen + codePosition - 1, step=-1, y=y)
 
                     compiledCode, variableInformation, metaInformation = buildCode(code, variableInformation,
                                                                                    metaInformation)
