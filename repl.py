@@ -3,7 +3,7 @@ try:
 except ModuleNotFoundError:
     print("ASnake not found. Install latest ASnake.py from https://github.com/AhriFoxSnek/ASnake")
     exit()
-from os import listdir, remove, getcwd, environ
+from os import listdir, remove, getcwd, environ, kill
 from subprocess import Popen
 from subprocess import PIPE
 from time import sleep
@@ -22,9 +22,12 @@ if 'windows' in OS:
     except ModuleNotFoundError:
         print("curses not supported. Please install via something like:\npython -m pip install windows-curses")
         exit()
+    from signal import CTRL_C_EVENT
+    stopExecution = CTRL_C_EVENT
 else:
     import curses
-
+    from signal import SIGINT
+    stopExecution = SIGINT
 # v temporary
 import sys
 compileDict = {'CPython': 'Python', 'PyPy': 'PyPy3'}
@@ -42,7 +45,7 @@ pyCall='"'+sys.executable+'"'
 del sys, compileDict, platform
 
 # constants
-ReplVersion = 'v0.4.5'
+ReplVersion = 'v0.5.0'
 PREFIX = ">>> "
 PREFIXlen = len(PREFIX)
 INDENT = "... "
@@ -134,7 +137,7 @@ keyword_list = ('__build_class__', '__debug__', '__doc__', '__import__', '__load
 
                 # ASnake keywords
                 'do', 'does', 'end', 'equals', 'greater', 'less', 'loop', 'minus', 'nothing', 'of', 'plus',
-                'power', 'remainder', 'than', 'then', 'times', 'until',
+                'power', 'remainder', 'than', 'then', 'times',
 
                 # Environment
                 'listdir','remove','sleep'
@@ -355,41 +358,62 @@ def main(stdscr):
                     readChildStdout=child.stdout.read
                     output=''
                     childPoll=child.poll
-                    while True:
-                        # show output by character
-                        if childPoll() is not None:
-                            if 'ASnakeREPLCommand.txt' in listdir():
-                                remove('ASnakeREPLCommand.txt')
-                            exit()
-                        elif addByte:
-                            output += readChildStdout(1)
-                            addByte=False
-                        else:
-                            output = readChildStdout(1)
-                        try:
-                            output = output.decode()
-                        except UnicodeDecodeError:
-                            addByte=True
-                            continue
-                        if output:
-                            if output == exitByte and 'ASnakeREPLCommand.txt' not in listdir():
-                                break
-                            elif output == errorByte:
-                                output = ''
-                                ASError = True
+                    try:
+                        while True:
+                            # show output by character
+                            if childPoll() is not None:
+                                if 'ASnakeREPLCommand.txt' in listdir():
+                                    remove('ASnakeREPLCommand.txt')
+                                exit()
+                            elif addByte:
+                                output += readChildStdout(1)
+                                addByte=False
+                            else:
+                                output = readChildStdout(1)
+                            try:
+                                output = output.decode()
+                            except UnicodeDecodeError:
+                                addByte=True
                                 continue
-                            elif isWindows and output == '\r':
-                                output=''
-                        else:
-                            continue
+                            if output:
+                                if output == exitByte and 'ASnakeREPLCommand.txt' not in listdir():
+                                    break
+                                elif output == errorByte:
+                                    output = ''
+                                    ASError = True
+                                    continue
+                                elif isWindows and output == '\r':
+                                    output=''
+                            else:
+                                continue
 
-                        for i in range(len(output)):
-                            stdscr.addstr(f"{output[i]}", curses.color_pair(3) if ASError else curses.color_pair(1))
-                            y, x = stdscr.getyx()
-                            if y >= height - 1:
-                                stdscr.clear()
-                                stdscr.move(0, 0)
-                        stdscr.refresh()
+                            for i in range(len(output)):
+                                stdscr.addstr(f"{output[i]}", curses.color_pair(3) if ASError else curses.color_pair(1))
+                                y, x = stdscr.getyx()
+                                if y >= height - 1:
+                                    stdscr.clear()
+                                    stdscr.move(0, 0)
+                            stdscr.refresh()
+                    except KeyboardInterrupt:
+                        kill(child.pid, stopExecution)
+                        while True:
+                            # need to burn rest of output
+                            if addByte:
+                                output += readChildStdout(1)
+                                addByte = False
+                            else:
+                                output = readChildStdout(1)
+                            try:
+                                output = output.decode()
+                            except UnicodeDecodeError:
+                                addByte=True
+                                continue
+                            if output and output == exitByte and 'ASnakeREPLCommand.txt' not in listdir():
+                                break
+                        stdscr.addstr('\nKeyboardInterrupt',curses.color_pair(3))
+                        y, x = stdscr.getyx()
+                        if y+1 < height:
+                            stdscr.move(y + 1, 0)
                     child.stdout.flush()
                 else:
                     if isWindows:
