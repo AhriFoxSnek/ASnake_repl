@@ -1,5 +1,8 @@
 from os import listdir, remove
 from time import sleep
+from dill import dump_session, load_session
+try: load_session('run.pkl')
+except: pass
 while True:
     if 'ASnakeREPLCommand.txt' in listdir():
         try:
@@ -19,6 +22,7 @@ while True:
             try: remove('ASnakeREPLCommand.txt')
             except: pass
             print(chr(999999))
+            dump_session('run.pkl')
     else:
         try:
             sleep(0.01)
