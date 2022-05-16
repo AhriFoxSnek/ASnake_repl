@@ -4,8 +4,7 @@ except ModuleNotFoundError:
     print("ASnake not found. Install latest ASnake.py from https://github.com/AhriFoxSnek/ASnake")
     exit()
 from os import listdir, remove, getcwd, environ, kill
-from subprocess import Popen
-from subprocess import PIPE
+from subprocess import Popen, PIPE, DEVNULL, call
 from time import sleep
 
 import platform  # temporary import
@@ -13,25 +12,47 @@ import platform  # temporary import
 
 debug: bool = False # enables file output of useful info for debugging
 
+# v temporary
+import sys
+compileDict = {'CPython': 'Python', 'PyPy': 'PyPy3'}
+# ^ temporary
+pyCall='"'+sys.executable+'"'
 OS = platform.system().lower()
+noDill=False
 if 'windows' in OS:
     OS = 'windows'
     environ['PYTHONIOENCODING'] = 'UTF8'
     try:
         import curses
     except ModuleNotFoundError:
-        print("curses not supported. Please install via something like:\npython -m pip install windows-curses")
+        print(f"curses not supported. windows-curses is mandatory.\nPlease install via:\n\t{pyCall[1:-1]} -m pip install windows-curses")
         exit()
-    from signal import CTRL_C_EVENT
-    stopExecution = CTRL_C_EVENT
+    try:
+        import dill
+        del dill
+    except ModuleNotFoundError:
+        print(f"dill is not installed. dill is mandatory.\nPlease install via:\n\t{pyCall[1:-1]} -m pip install dill")
+        exit()
+    from signal import SIGINT as stopExecution
+    from signal import signal
 else:
-    import curses
-    from signal import SIGINT
-    stopExecution = SIGINT
-# v temporary
-import sys
-compileDict = {'CPython': 'Python', 'PyPy': 'PyPy3'}
-# ^ temporary
+    try:
+        import curses
+    except ModuleNotFoundError:
+        print(f"curses is not installed. curses is mandatory.\nPlease install via:\n\t{pyCall[1:-1]} -m pip install curses")
+        exit()
+    try:
+        import dill
+        del dill
+    except ModuleNotFoundError:
+        print(f"dill is not installed. dill is optional.\nYou can install it via:\n\t{pyCall[1:-1]} -m pip install dill")
+        tmp=input("You can continue without it. Your session will not be saved after exit. Continue? Y/n: ")
+        if 'n' in tmp.lower():
+            exit()
+        else: noDill=True
+            
+    from signal import SIGINT as stopExecution
+
 
 pythonVersion=f"{sys.version_info.major}.{sys.version_info.minor}" # run-time constant
 
@@ -41,11 +62,10 @@ if hasattr(sys, "pyston_version_info"):
     compileTo = 'Pyston'
 else:
     compileTo = compileDict[platform.python_implementation()]
-pyCall='"'+sys.executable+'"'
 del sys, compileDict, platform
 
 # constants
-ReplVersion = 'v0.5.0'
+ReplVersion = 'v0.6.0'
 PREFIX = ">>> "
 PREFIXlen = len(PREFIX)
 INDENT = "... "
@@ -147,10 +167,14 @@ for name in keyword_list:
     lookup[name] = name
 del keyword_list
 
-
+if noDill:
+    runFile='executionEnvironmentNoDill.py'
+else:
+    runFile='executionEnvironment.py'
 
 def main(stdscr):
-    child = Popen(f'{pyCall} -u executionEnvironment.py', stdout=PIPE, cwd=getcwd(), shell=True)
+    isWindows = True if OS == 'windows' else False
+    child = Popen(f'{pyCall} -u {runFile}', stdout=PIPE, cwd=getcwd(), shell=False if isWindows else True)
     exitByte = chr(999999)
     errorByte = chr(999998)
     setEnterKeys = {curses.KEY_ENTER, 10, 13}
@@ -158,9 +182,9 @@ def main(stdscr):
     curses.init_pair(1, curses.COLOR_WHITE, -1)  # for usual text
     curses.init_pair(2, curses.COLOR_CYAN, -1)  # for pretty prefix
     curses.init_pair(3, curses.COLOR_RED, -1) # for scary error
-    if 'windows' == OS:
+    if isWindows:
         curses.init_pair(4, curses.COLOR_YELLOW, -1)
-    isWindows = True if OS == 'windows' else False
+        stdscr.nodelay(1)
     curses.echo()
 
     # v debug vars v
@@ -363,7 +387,8 @@ def main(stdscr):
                             # show output by character
                             if childPoll() is not None:
                                 if 'ASnakeREPLCommand.txt' in listdir():
-                                    remove('ASnakeREPLCommand.txt')
+                                    try: remove('ASnakeREPLCommand.txt')
+                                    except: pass
                                 exit()
                             elif addByte:
                                 output += readChildStdout(1)
@@ -394,8 +419,17 @@ def main(stdscr):
                                     stdscr.clear()
                                     stdscr.move(0, 0)
                             stdscr.refresh()
+                            if isWindows:
+                                tmp = stdscr.getch()
+                                if tmp == 3: 
+                                    raise KeyboardInterrupt
+                                else: pass
                     except KeyboardInterrupt:
-                        kill(child.pid, stopExecution)
+                        if isWindows:
+                            call(['taskkill', '/PID', str(child.pid), '/F'], stderr=DEVNULL, stdout=PIPE)
+                            remove('ASnakeREPLCommand.txt')
+                        else:
+                            kill(child.pid, stopExecution)
                         while True:
                             # need to burn rest of output
                             if addByte:
@@ -408,12 +442,15 @@ def main(stdscr):
                             except UnicodeDecodeError:
                                 addByte=True
                                 continue
-                            if output and output == exitByte and 'ASnakeREPLCommand.txt' not in listdir():
+                            if not output or output == exitByte and 'ASnakeREPLCommand.txt' not in listdir():
                                 break
                         stdscr.addstr('\nKeyboardInterrupt',curses.color_pair(3))
-                        y, x = stdscr.getyx()
+                        y, _ = stdscr.getyx()
                         if y+1 < height:
                             stdscr.move(y + 1, 0)
+                        if isWindows:
+                            child = Popen(f'{pyCall} -u {runFile}', stdout=PIPE, cwd=getcwd(), shell=False)
+                            firstLine=True
                     child.stdout.flush()
                 else:
                     if isWindows:
@@ -427,6 +464,7 @@ def main(stdscr):
                 stdscr.refresh()
         elif c == 3: # ctrl c
             if isWindows: raise KeyboardInterrupt
+        elif c == -1: pass
         else:
             debugFileOut = True
             if codePosition == len(code):
@@ -459,4 +497,5 @@ if __name__ == "__main__":
         curses.wrapper(main)
     except (KeyboardInterrupt, BrokenPipeError):
         if 'ASnakeREPLCommand.txt' in listdir():
-            remove('ASnakeREPLCommand.txt')
+            try: remove('ASnakeREPLCommand.txt')
+            except: pass
