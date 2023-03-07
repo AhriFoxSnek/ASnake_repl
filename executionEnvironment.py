@@ -1,10 +1,10 @@
 from os import listdir, remove
 from time import sleep
-from dill import dump_session, load_session
-try: load_session('run.pkl')
+from dill import dump_module, load_module
+try: load_module('run.pkl')
 except: pass
 while True:
-    if 'ASnakeREPLCommand.txt' in listdir():
+    if 'ASnakeREPLCommand.txt' in listdir() and 'ASnakeREPLCommand.lock' not in listdir():
         try:
             with open('ASnakeREPLCommand.txt', 'r') as _:
                 try:
@@ -22,7 +22,7 @@ while True:
             try: remove('ASnakeREPLCommand.txt')
             except: pass
             print(chr(999999))
-            dump_session('run.pkl')
+            dump_module('run.pkl')
     else:
         try:
             sleep(0.01)
