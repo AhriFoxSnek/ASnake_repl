@@ -65,7 +65,7 @@ else:
 del sys, compileDict, platform
 
 # constants
-ReplVersion = 'v0.6.0'
+ReplVersion = 'v0.7.0'
 PREFIX = ">>> "
 PREFIXlen = len(PREFIX)
 INDENT = "... "
@@ -79,7 +79,7 @@ def file_out(write_mode, *args):
 
 
 def get_hint(word):
-    if word == "": return ''
+    if not word: return ''
     for key, value in lookup.items():
         if key[:len(word)] == word:
             return value
@@ -91,7 +91,7 @@ def display_hint(stdscr, y: int, x: int, code: str, lastCursorX: int, after_appe
         clear_suggestion(stdscr=stdscr, start=lastCursorX + 1, end=maxX, step=1, y=y)
         stdscr.delch(y, lastCursorX)
         stdscr.move(y, lastCursorX)
-    if get_hint(code) == '':
+    if not get_hint(code):
         return False
     for i in range(after_appending, lastCursorX, -1):
         stdscr.delch(y, i)
@@ -122,10 +122,9 @@ def buildCode(code, variableInformation, metaInformation):
         # ASnake Syntax Error
         return (output, variableInformation, metaInformation)
     else:
-        if variableInformation != output[2]:
-            variableInformation = output[2]
-            for var in variableInformation:
-                lookup[var] = var
+        variableInformation = output[2]
+        for var in variableInformation:
+            lookup[var] = var
         return (output[0], variableInformation, output[3])
 
 
@@ -175,9 +174,10 @@ else:
 def main(stdscr):
     isWindows = True if OS == 'windows' else False
     child = Popen(f'{pyCall} -u {runFile}', stdout=PIPE, cwd=getcwd(), shell=False if isWindows else True)
+    readChildStdout = child.stdout.read
+    childPoll = child.poll
     exitByte = chr(999999)
     errorByte = chr(999998)
-    setEnterKeys = {curses.KEY_ENTER, 10, 13}
     curses.use_default_colors()
     curses.init_pair(1, curses.COLOR_WHITE, -1)  # for usual text
     curses.init_pair(2, curses.COLOR_CYAN, -1)  # for pretty prefix
@@ -203,8 +203,41 @@ def main(stdscr):
     stdscr.addstr(f"ASnake {ASnakeVersion} \nRepl {ReplVersion}\n\n")
     stdscr.addstr(PREFIX, curses.color_pair(2))
 
+    def skipToCharacter(stdscr, x, y, stopCharacters=set(" .()*+-/,'\"=&^%$#@"), direction='left', delete=False):
+        nonlocal code, codePosition
+        tmpPosition = 0 if direction == 'left' else len(code)+1
+
+        i = 1 if direction == 'left' else -1
+        # these prevent overflow
+        if direction == 'right' and codePosition-i >= len(code)-1: return
+        elif direction == 'left' and codePosition == 0: stdscr.delch(y, x-1) ; stdscr.delch(y, x-2) ; return
+        # skip multiple
+        while code[codePosition - i] in stopCharacters:
+            if direction == 'left':
+                codePosition -= 1
+            elif direction == 'right':
+                codePosition += 1
+            i += 1 if direction == 'left' else -1
+            if not (0 <= codePosition-1 <= len(code)-1) : break
+        i = 1 if direction == 'left' else -1
+
+        if direction == 'left':
+            theRange = range(codePosition, 1, -1)
+        elif direction == 'right':
+            theRange = range(codePosition, len(code)-1, 1)
+        for char in theRange:
+            if code[char - i] in stopCharacters:
+                tmpPosition = char ; break
+        if delete: code = code[:tmpPosition]
+        codePosition = tmpPosition
+        tmpPosition = tmpPosition + PREFIXlen - i
+        if delete:
+            delete_line(stdscr=stdscr, start=x, end=tmpPosition, step=-1, y=y)
+        stdscr.move(y, tmpPosition + 1)
+
     history_idx = 0
     while True:
+        if childPoll() == 0: exit()
         c = stdscr.getch()
         # shift left 393 ; shift right 402
         # ctrl left 546 ; ctrl right 561
@@ -226,34 +259,6 @@ def main(stdscr):
                 stdscr.move(y, x - 1)
                 if codePosition <= codeLength and x - PREFIXlen <= codePosition:
                     codePosition -= 1
-
-        elif c == 546: # CTRL_LEFT
-            debugFileOut = True
-            if not x < PREFIXlen+1 and codePosition > 0:
-                while code[codePosition-1] == ' ':
-                    if codePosition == 0:
-                        break
-                    codePosition -= 1
-                while code[codePosition-1] != ' ':
-                    if codePosition == 0:
-                        break
-                    codePosition -= 1
-                stdscr.move(y, PREFIXlen+codePosition)
-
-        elif c == 561: # CTRL_RIGHT
-            debugFileOut = True
-            if codePosition < codeLength:
-                while code[codePosition-1] == ' ':
-                    codePosition += 1
-                    if codePosition > codeLength:
-                        codePosition = codeLength
-                        break
-                while code[codePosition-1] != ' ':
-                    codePosition += 1
-                    if codePosition > codeLength:
-                        codePosition=codeLength
-                        break
-                stdscr.move(y, PREFIXlen+codePosition)
 
         elif c == curses.KEY_RIGHT:
             debugFileOut = True
@@ -314,11 +319,19 @@ def main(stdscr):
                         # not at end of line
                         stdscr.move(y, x - 1)
                         stdscr.addstr(code[codePosition:])
+                    else:
+                        # add whitespace (2 spaces)
+                        code += '  '
+                        codePosition+=2
+                        stdscr.addstr('  ')
                     # move to end of line
                     stdscr.move(y, len(code) + PREFIXlen)
-            elif codePosition == 0:
-                # at start of line with nothing
-                stdscr.move(y, PREFIXlen)
+            else:
+                # add whitespace (2 spaces)
+                code += '  '
+                codePosition += 2
+                stdscr.addstr('  ')
+                stdscr.move(y, len(code) + PREFIXlen)
 
         elif c in {curses.KEY_BACKSPACE, 127, 8}:
             debugFileOut = True
@@ -339,12 +352,13 @@ def main(stdscr):
                 # if no characters, clear suggestion
                 clear_suggestion(stdscr=stdscr, start=4, end=width, step=1, y=y)
 
-        elif c in setEnterKeys:
+        elif c in {curses.KEY_ENTER, 10, 13}:
             debugFileOut = True
+
             if y >= height - 1:
                 stdscr.clear()
                 stdscr.refresh()
-            elif code[-1]=='\\':
+            elif code and code[-1]=='\\':
                 stdscr.move(y+1, 0)
                 stdscr.addstr(INDENT, curses.color_pair(2))
                 lastCursorX = INDENTlen
@@ -356,16 +370,17 @@ def main(stdscr):
                     history_idx = len(bash_history)
                     delete_line(stdscr=stdscr, start=height, end=PREFIXlen + codePosition - 1, step=-1, y=y)
 
-                    compiledCode, variableInformation, metaInformation = buildCode(code, variableInformation,
-                                                                                   metaInformation)
-
+                    compiledCode, variableInformation, metaInformation = buildCode(code, variableInformation, metaInformation)
                     if compiledCode.startswith(f'# ASnake {ASnakeVersion} ERROR'):
                         ASError = True
                     else:
                         ASError = False
 
+                    with open('ASnakeREPLCommand.lock','w') as f:
+                        f.write('x')
                     with open('ASnakeREPLCommand.txt','w') as f:
                         f.write(compiledCode)
+                    remove('ASnakeREPLCommand.lock')
 
                     if firstLine:
                         if isWindows:
@@ -379,9 +394,7 @@ def main(stdscr):
 
 
                     addByte=False
-                    readChildStdout=child.stdout.read
                     output=''
-                    childPoll=child.poll
                     try:
                         while True:
                             # show output by character
@@ -464,6 +477,13 @@ def main(stdscr):
                 stdscr.refresh()
         elif c == 3: # ctrl c
             if isWindows: raise KeyboardInterrupt
+        elif c == ord(b'\x17'): # ctrl w
+            debugFileOut = True
+            skipToCharacter(stdscr, x, y, delete=True)
+        elif c == ord('Ȧ'): # ctrl left
+            skipToCharacter(stdscr, x, y)
+        elif c == ord('ȵ'): # ctrl right
+            skipToCharacter(stdscr, x, y, direction='right')
         elif c == -1: pass
         else:
             debugFileOut = True
@@ -486,6 +506,7 @@ def main(stdscr):
                 stdscr.addstr(code[codePosition:])
                 stdscr.move(y, x)
                 stdscr.refresh()
+
         if debug and debugFileOut:
             file_out('w', code,f"{codePosition}/{len(code)} x={x} y={y} bi={history_idx}",extra)
 
