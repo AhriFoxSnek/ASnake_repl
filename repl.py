@@ -1,5 +1,7 @@
 try:
     from ASnake import build, ASnakeVersion
+except ImportError:
+    from ASnake.ASnake import build, ASnakeVersion
 except ModuleNotFoundError:
     print("ASnake not found. Install latest ASnake.py from https://github.com/AhriFoxSnek/ASnake")
     exit()
@@ -65,7 +67,7 @@ else:
 del sys, compileDict, platform
 
 # constants
-ReplVersion = 'v0.7.0'
+ReplVersion = 'v0.7.1'
 PREFIX = ">>> "
 PREFIXlen = len(PREFIX)
 INDENT = "... "
@@ -368,7 +370,7 @@ def main(stdscr):
                     if code and (not bash_history or code != bash_history[-1]):
                         bash_history.append(code)
                     history_idx = len(bash_history)
-                    delete_line(stdscr=stdscr, start=height, end=PREFIXlen + codePosition - 1, step=-1, y=y)
+                    delete_line(stdscr=stdscr, start=height, end=PREFIXlen + len(code) - 1, step=-1, y=y)
 
                     compiledCode, variableInformation, metaInformation = buildCode(code, variableInformation, metaInformation)
                     if compiledCode.startswith(f'# ASnake {ASnakeVersion} ERROR'):
@@ -480,9 +482,9 @@ def main(stdscr):
         elif c == ord(b'\x17'): # ctrl w
             debugFileOut = True
             skipToCharacter(stdscr, x, y, delete=True)
-        elif c == ord('Ȧ'): # ctrl left
+        elif c in {ord('Ȧ'),ord('Ȫ')}: # ctrl left
             skipToCharacter(stdscr, x, y)
-        elif c == ord('ȵ'): # ctrl right
+        elif c in {ord('ȵ'),ord('ȹ')}: # ctrl right
             skipToCharacter(stdscr, x, y, direction='right')
         elif c == -1: pass
         else:
@@ -497,11 +499,11 @@ def main(stdscr):
                     # if a space is done on a suggestion, clear the suggestion
                     clear_suggestion(stdscr=stdscr, start=lastCursorX, end=width, step=1, y=y)
             else:
-                if codePosition == 1:
+                if codePosition == 0:
                     code = chr(c) + code[codePosition:]
                 else:
                     code = code[:codePosition] + chr(c) + code[codePosition:]
-                    codePosition += 1
+                codePosition += 1
                 delete_line(stdscr=stdscr, start=x - 1 + len(code[codePosition:]), end=x - 1, step=-1, y=y)
                 stdscr.addstr(code[codePosition:])
                 stdscr.move(y, x)
