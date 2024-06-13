@@ -9,12 +9,8 @@ from os import listdir, remove, getcwd, environ, kill
 from subprocess import Popen, PIPE, DEVNULL, call
 from time import sleep
 
-import platform  # temporary import
-
-
-debug: bool = False # enables file output of useful info for debugging
-
 # v temporary
+import platform
 import sys
 compileDict = {'CPython': 'Python', 'PyPy': 'PyPy3'}
 # ^ temporary
@@ -67,11 +63,13 @@ else:
 del sys, compileDict, platform
 
 # constants
-ReplVersion = 'v0.7.1'
+ReplVersion = 'v0.7.2'
 PREFIX = ">>> "
 PREFIXlen = len(PREFIX)
 INDENT = "... "
 INDENTlen = len(INDENT)
+SPACE = '  '
+SPACElen = len(SPACE)
 
 
 # for debugging only
@@ -158,7 +156,9 @@ keyword_list = ('__build_class__', '__debug__', '__doc__', '__import__', '__load
 
                 # ASnake keywords
                 'do', 'does', 'end', 'equals', 'greater', 'less', 'loop', 'minus', 'nothing', 'of', 'plus',
-                'power', 'remainder', 'than', 'then', 'times',
+                'power', 'remainder', 'than', 'then', 'times', 'divide', 'rdivide', 'round divide', 'round divide by',
+                'modulo', 'remainder', 'are', 'arent', 'each of', 'const', 'constant', 'pipe', 'into', 'to', 'exponent',
+                'cdoes', 'cdef',
 
                 # Environment
                 'listdir','remove','sleep'
@@ -176,10 +176,28 @@ else:
 def main(stdscr):
     isWindows = True if OS == 'windows' else False
     child = Popen(f'{pyCall} -u {runFile}', stdout=PIPE, cwd=getcwd(), shell=False if isWindows else True)
+
+    # preallocated functions
     readChildStdout = child.stdout.read
     childPoll = child.poll
+    stdscr_getch=stdscr.getch
+    stdscr_getyx=stdscr.getyx
+    stdscr_getmaxyx=stdscr.getmaxyx
+
+    # character variables
     exitByte = chr(999999)
     errorByte = chr(999998)
+    KEY_TAB = ord('\t')
+    KEY_BACKSPACE = {curses.KEY_BACKSPACE, 127, 8}
+    KEY_ENTER = {curses.KEY_ENTER, 10, 13}
+    CTRL_LEFT = {ord('Ȧ'),ord('Ȫ'),ord('ȫ'), 564}
+    CTRL_RIGHT = {ord('ȵ'), ord('ȹ'), ord('ŋ'), 561}
+    CTRL_W = ord(b'\x17')
+    # shift left 393 ; shift right 402
+    # alt tab 27
+    # backslash 92
+
+    # colors
     curses.use_default_colors()
     curses.init_pair(1, curses.COLOR_WHITE, -1)  # for usual text
     curses.init_pair(2, curses.COLOR_CYAN, -1)  # for pretty prefix
@@ -190,6 +208,7 @@ def main(stdscr):
     curses.echo()
 
     # v debug vars v
+    debug: bool = False  # enables file output of useful info for debugging
     extra = ''
     debugFileOut=False
 
@@ -212,7 +231,7 @@ def main(stdscr):
         i = 1 if direction == 'left' else -1
         # these prevent overflow
         if direction == 'right' and codePosition-i >= len(code)-1: return
-        elif direction == 'left' and codePosition == 0: stdscr.delch(y, x-1) ; stdscr.delch(y, x-2) ; return
+        elif direction == 'left' and codePosition <= 0: return
         # skip multiple
         while code[codePosition - i] in stopCharacters:
             if direction == 'left':
@@ -231,6 +250,7 @@ def main(stdscr):
             if code[char - i] in stopCharacters:
                 tmpPosition = char ; break
         if delete: code = code[:tmpPosition]
+        if tmpPosition > len(code): tmpPosition-=1
         codePosition = tmpPosition
         tmpPosition = tmpPosition + PREFIXlen - i
         if delete:
@@ -240,15 +260,11 @@ def main(stdscr):
     history_idx = 0
     while True:
         if childPoll() == 0: exit()
-        c = stdscr.getch()
-        # shift left 393 ; shift right 402
-        # ctrl left 546 ; ctrl right 561
-        # alt tab 27
-        # backslash 92
+        c = stdscr_getch()
         codeLength = len(code)
         # notetoself: x and y are cursor position
-        y, x = stdscr.getyx()
-        height, width = stdscr.getmaxyx()
+        y, x = stdscr_getyx()
+        height, width = stdscr_getmaxyx()
 
         if codePosition > codeLength:
             codePosition = codeLength
@@ -257,6 +273,9 @@ def main(stdscr):
 
         if c == curses.KEY_LEFT:
             debugFileOut = True
+            if hinted:
+                hinted=False
+                clear_suggestion(stdscr=stdscr, start=lastCursorX, end=width, step=1, y=y)
             if not x < PREFIXlen+1:
                 stdscr.move(y, x - 1)
                 if codePosition <= codeLength and x - PREFIXlen <= codePosition:
@@ -267,6 +286,8 @@ def main(stdscr):
             if codePosition < codeLength:
                 stdscr.addstr(code[codePosition])
                 codePosition += 1
+            elif codePosition == codeLength:
+                code+=' ' ; codePosition += 1
             stdscr.move(y, x + 1)
 
 
@@ -301,14 +322,14 @@ def main(stdscr):
                 delete_line(stdscr=stdscr, start=x, end=PREFIXlen - 1, step=-1, y=y)
 
         # tab -> for auto-complete feature
-        elif c == ord('\t'):
+        elif c == KEY_TAB:
             debugFileOut = True
             # call get_hint function to return the word which fits :n-index of `code` variable
             after_appending = x + 1
             codeSplit = code.split()
             if codeSplit:
                 autocomplete: str = get_hint(codeSplit[-1])
-                if autocomplete != '':
+                if autocomplete != '' and codePosition >= codeLength:
                     # autocomplete found
                     stdscr.move(y, codePosition + PREFIXlen - len(codeSplit[-1]))
 
@@ -317,44 +338,50 @@ def main(stdscr):
                     codePosition += len(autocomplete) - len(codeSplit[-1])
                 else:
                     # no autocomplete found
+                    tmpMoveTo: int
                     if codePosition != codeLength:
                         # not at end of line
-                        stdscr.move(y, x - 1)
+                        tmpMoveTo=codePosition+SPACElen
+                        for _ in range(SPACElen+1): stdscr.delch(y, x-_)
+                        code = code[:codePosition] + SPACE + code[codePosition:]
                         stdscr.addstr(code[codePosition:])
                     else:
                         # add whitespace (2 spaces)
-                        code += '  '
-                        codePosition+=2
-                        stdscr.addstr('  ')
+                        code += SPACE
+                        stdscr.addstr(SPACE)
+                        tmpMoveTo = codeLength+SPACElen
                     # move to end of line
-                    stdscr.move(y, len(code) + PREFIXlen)
+                    codePosition += SPACElen-1
+                    stdscr.move(y, tmpMoveTo + PREFIXlen)
             else:
                 # add whitespace (2 spaces)
-                code += '  '
-                codePosition += 2
-                stdscr.addstr('  ')
-                stdscr.move(y, len(code) + PREFIXlen)
+                code += SPACE
+                codePosition += SPACElen
+                stdscr.addstr(SPACE)
+                stdscr.move(y, codeLength+SPACElen + PREFIXlen)
+            hinted = False
 
-        elif c in {curses.KEY_BACKSPACE, 127, 8}:
+        elif c in KEY_BACKSPACE:
             debugFileOut = True
-            if not x < 4:
-                clear_suggestion(stdscr=stdscr, start=lastCursorX, end=width, step=1, y=y)
+            if not x < PREFIXlen:
+                if hinted:
+                    clear_suggestion(stdscr=stdscr, start=lastCursorX, end=width, step=1, y=y)
+                    hinted = False
                 stdscr.delch(y, x)
 
-                if 0 < codePosition < len(code) - 1:
+                if 0 < codePosition < codeLength:
                     tmpStart = codePosition - 1 if codePosition - 1 > 0 else 0
                     code = code[:tmpStart] + code[codePosition:]
                 else:
                     code = code[:-1]
-                codePosition -= 1
-                display_hint(stdscr, y, x, code, 0, 0, False, 0)
+                hinted = display_hint(stdscr, y, x, code, lastCursorX=0, after_appending=0, hinted=hinted, maxX=0)
             else:
                 stdscr.move(y, x + 1)
             if code == '' and x <= 4:
                 # if no characters, clear suggestion
                 clear_suggestion(stdscr=stdscr, start=4, end=width, step=1, y=y)
 
-        elif c in {curses.KEY_ENTER, 10, 13}:
+        elif c in KEY_ENTER:
             debugFileOut = True
 
             if y >= height - 1:
@@ -477,19 +504,23 @@ def main(stdscr):
                 code = ''
                 codePosition = 0
                 stdscr.refresh()
-        elif c == 3: # ctrl c
-            if isWindows: raise KeyboardInterrupt
-        elif c == ord(b'\x17'): # ctrl w
+        elif c == 3 and isWindows: # ctrl c
+            raise KeyboardInterrupt
+        elif c == CTRL_W: # ctrl w
             debugFileOut = True
-            skipToCharacter(stdscr, x, y, delete=True)
-        elif c in {ord('Ȧ'),ord('Ȫ')}: # ctrl left
+            if codePosition <= 0:
+                delete_line(stdscr, PREFIXlen, PREFIXlen+2, 1, y)
+                stdscr.move(y, PREFIXlen)
+            else:
+                skipToCharacter(stdscr, x, y, delete=True)
+        elif c in CTRL_LEFT:
             skipToCharacter(stdscr, x, y)
-        elif c in {ord('ȵ'),ord('ȹ')}: # ctrl right
+        elif c in CTRL_RIGHT:
             skipToCharacter(stdscr, x, y, direction='right')
         elif c == -1: pass
         else:
             debugFileOut = True
-            if codePosition == len(code):
+            if codePosition == codeLength:
                 code += chr(c)
                 codePosition += 1
                 lastCursorX = x
