@@ -8,6 +8,8 @@ except ModuleNotFoundError:
 from os import listdir, remove, getcwd, environ, kill
 from subprocess import Popen, PIPE, DEVNULL, call
 from time import sleep
+from re import compile as re_compile
+from re import escape  as re_escape
 
 # v temporary
 import platform
@@ -63,7 +65,7 @@ else:
 del sys, compileDict, platform
 
 # constants
-ReplVersion = 'v0.7.2'
+ReplVersion = 'v0.7.3'
 PREFIX = ">>> "
 PREFIXlen = len(PREFIX)
 INDENT = "... "
@@ -78,8 +80,21 @@ def file_out(write_mode, *args):
         f.write(f"{args}\n")
 
 
-def get_hint(word):
+
+trimSuggestion = re_compile(f"[{re_escape(' ()*+-/,=&^%$#@')}]+")
+def get_last_substring(s,returnLast=True):
+    matches = list(trimSuggestion.finditer(s))
+    last_index = matches[-1].end() - 1 if matches else -1
+    if last_index == -1: return ''
+    if returnLast:
+        return s[last_index+1:]
+    return s[:last_index+1]
+
+def get_hint(word,seperateBasedOnCharacter=True):
     if not word: return ''
+    if seperateBasedOnCharacter:
+        tmp=get_last_substring(word)
+        if tmp: word=tmp
     for key, value in lookup.items():
         if key[:len(word)] == word:
             return value
@@ -99,7 +114,7 @@ def display_hint(stdscr, y: int, x: int, code: str, lastCursorX: int, after_appe
         color = curses.color_pair(4)
     else:
         color = curses.color_pair(1) | curses.A_DIM
-    stdscr.addstr(y, x + len(code.split()[-1][len(code):]), get_hint(code.split()[-1])[len(code):], color)
+    stdscr.addstr(y, x + len(code.split()[-1][len(code):]), get_hint(code.split()[-1])[abs(len(get_last_substring(code,False))-len(code)):], color)
     stdscr.move(y, x)
     return True
 
@@ -107,7 +122,6 @@ def display_hint(stdscr, y: int, x: int, code: str, lastCursorX: int, after_appe
 def delete_line(stdscr, start, end, step, y):
     for i in range(start, end, step):
         stdscr.delch(y, i)
-
 
 def clear_suggestion(stdscr, start, end, step, y):
     delete_line(stdscr, start, end, step, y)
@@ -129,6 +143,7 @@ def buildCode(code, variableInformation, metaInformation):
 
 
 bash_history = []
+stopCharacters = set(" .()*+-/,'\"=&^%$#@")
 keyword_list = ('__build_class__', '__debug__', '__doc__', '__import__', '__loader__', '__name__', '__package__',
                 '__spec__', 'abs', 'all', 'and', 'any', 'ArithmeticError', 'as', 'ascii', 'assert', 'AssertionError',
                 'async', 'AttributeError', 'await', 'BaseException', 'bin', 'BlockingIOError', 'bool', 'break',
@@ -224,7 +239,7 @@ def main(stdscr):
     stdscr.addstr(f"ASnake {ASnakeVersion} \nRepl {ReplVersion}\n\n")
     stdscr.addstr(PREFIX, curses.color_pair(2))
 
-    def skipToCharacter(stdscr, x, y, stopCharacters=set(" .()*+-/,'\"=&^%$#@"), direction='left', delete=False):
+    def skipToCharacter(stdscr, x, y, stopCharacters=stopCharacters, direction='left', delete=False):
         nonlocal code, codePosition
         tmpPosition = 0 if direction == 'left' else len(code)+1
 
@@ -283,11 +298,12 @@ def main(stdscr):
 
         elif c == curses.KEY_RIGHT:
             debugFileOut = True
-            if codePosition < codeLength:
-                stdscr.addstr(code[codePosition])
-                codePosition += 1
-            elif codePosition == codeLength:
-                code+=' ' ; codePosition += 1
+            if hinted:
+                hinted=False
+                clear_suggestion(stdscr=stdscr, start=lastCursorX, end=width, step=1, y=y)
+            if codePosition+1 > codeLength:
+                code+=' '
+            codePosition += 1
             stdscr.move(y, x + 1)
 
 
@@ -329,13 +345,16 @@ def main(stdscr):
             codeSplit = code.split()
             if codeSplit:
                 autocomplete: str = get_hint(codeSplit[-1])
-                if autocomplete != '' and codePosition >= codeLength:
+                if autocomplete and codePosition >= codeLength:
                     # autocomplete found
-                    stdscr.move(y, codePosition + PREFIXlen - len(codeSplit[-1]))
-
+                    tmpLeftOfAutoComplete = get_last_substring(codeSplit[-1],False)
+                    code = ''.join(codeSplit[:-1]) + tmpLeftOfAutoComplete + (' ' if len(codeSplit) > 1 else '') + autocomplete
+                    if tmpLeftOfAutoComplete:
+                        stdscr.move(y, PREFIXlen+len(code)-len(autocomplete))
+                    else:
+                        stdscr.move(y, codePosition + PREFIXlen - len(codeSplit[-1]))
                     stdscr.addstr(autocomplete)
-                    code = ' '.join(codeSplit[:-1]) + (' ' if len(codeSplit) > 1 else '') + autocomplete
-                    codePosition += len(autocomplete) - len(codeSplit[-1])
+                    codePosition = len(code)
                 else:
                     # no autocomplete found
                     tmpMoveTo: int
@@ -351,7 +370,7 @@ def main(stdscr):
                         stdscr.addstr(SPACE)
                         tmpMoveTo = codeLength+SPACElen
                     # move to end of line
-                    codePosition += SPACElen-1
+                    codePosition += SPACElen
                     stdscr.move(y, tmpMoveTo + PREFIXlen)
             else:
                 # add whitespace (2 spaces)
@@ -363,7 +382,8 @@ def main(stdscr):
 
         elif c in KEY_BACKSPACE:
             debugFileOut = True
-            if not x < PREFIXlen:
+
+            if x > PREFIXlen-1:
                 if hinted:
                     clear_suggestion(stdscr=stdscr, start=lastCursorX, end=width, step=1, y=y)
                     hinted = False
@@ -377,9 +397,9 @@ def main(stdscr):
                 hinted = display_hint(stdscr, y, x, code, lastCursorX=0, after_appending=0, hinted=hinted, maxX=0)
             else:
                 stdscr.move(y, x + 1)
-            if code == '' and x <= 4:
+            if code == '' and x <= PREFIXlen:
                 # if no characters, clear suggestion
-                clear_suggestion(stdscr=stdscr, start=4, end=width, step=1, y=y)
+                clear_suggestion(stdscr=stdscr, start=PREFIXlen, end=width, step=1, y=y)
 
         elif c in KEY_ENTER:
             debugFileOut = True
