@@ -82,13 +82,18 @@ def file_out(write_mode, *args):
 
 
 trimSuggestion = re_compile(f"[{re_escape(' ()*+-/,=&^%$#@')}]+")
-def get_last_substring(s,returnLast=True):
+def get_last_substring(s, return_last=True, return_index=False):
     matches = list(trimSuggestion.finditer(s))
-    last_index = matches[-1].end() - 1 if matches else -1
-    if last_index == -1: return ''
-    if returnLast:
-        return s[last_index+1:]
-    return s[:last_index+1]
+    if not matches:
+        if return_index:
+            return 0
+        return ''
+    last_index = matches[-1].end() - 1
+    if return_index:
+        return last_index
+    if return_last:
+        return s[last_index + 1:]
+    return s[:last_index + 1]
 
 def get_hint(word,seperateBasedOnCharacter=True):
     if not word: return ''
@@ -347,13 +352,11 @@ def main(stdscr):
                 autocomplete: str = get_hint(codeSplit[-1])
                 if autocomplete and codePosition >= codeLength:
                     # autocomplete found
-                    tmpLeftOfAutoComplete = get_last_substring(codeSplit[-1],False)
-                    code = ''.join(codeSplit[:-1]) + tmpLeftOfAutoComplete + (' ' if len(codeSplit) > 1 else '') + autocomplete
-                    if tmpLeftOfAutoComplete:
-                        stdscr.move(y, PREFIXlen+len(code)-len(autocomplete))
-                    else:
-                        stdscr.move(y, codePosition + PREFIXlen - len(codeSplit[-1]))
-                    stdscr.addstr(autocomplete)
+                    tmpLeftOfAutoComplete = get_last_substring(code,False,True)
+                    tmpIndex= tmpLeftOfAutoComplete+1 if tmpLeftOfAutoComplete else 0
+                    code = code[:tmpIndex] + autocomplete
+                    delete_line(stdscr=stdscr, start=x, end=PREFIXlen - 1, step=-1, y=y)
+                    stdscr.addstr(code)
                     codePosition = len(code)
                 else:
                     # no autocomplete found
@@ -417,7 +420,7 @@ def main(stdscr):
                     if code and (not bash_history or code != bash_history[-1]):
                         bash_history.append(code)
                     history_idx = len(bash_history)
-                    delete_line(stdscr=stdscr, start=height, end=PREFIXlen + len(code) - 1, step=-1, y=y)
+                    delete_line(stdscr=stdscr, start=width-1, end=PREFIXlen + len(code) - 1, step=-1, y=y)
 
                     compiledCode, variableInformation, metaInformation = buildCode(code, variableInformation, metaInformation)
                     if compiledCode.startswith(f'# ASnake {ASnakeVersion} ERROR'):
