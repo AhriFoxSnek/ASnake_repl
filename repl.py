@@ -65,7 +65,7 @@ else:
 del sys, compileDict, platform
 
 # constants
-ReplVersion = 'v0.7.3'
+ReplVersion = 'v0.8.0'
 PREFIX = ">>> "
 PREFIXlen = len(PREFIX)
 INDENT = "... "
@@ -277,6 +277,7 @@ def main(stdscr):
             delete_line(stdscr=stdscr, start=x, end=tmpPosition, step=-1, y=y)
         stdscr.move(y, tmpPosition + 1)
 
+    linesStartingY = 3
     history_idx = 0
     while True:
         if childPoll() == 0: exit()
@@ -296,7 +297,9 @@ def main(stdscr):
             if hinted:
                 hinted=False
                 clear_suggestion(stdscr=stdscr, start=lastCursorX, end=width, step=1, y=y)
-            if not x < PREFIXlen+1:
+            if not x < PREFIXlen+1 or y > linesStartingY:
+                if x == 0:
+                    y-=1 ; x=width
                 stdscr.move(y, x - 1)
                 if codePosition <= codeLength and x - PREFIXlen <= codePosition:
                     codePosition -= 1
@@ -309,7 +312,8 @@ def main(stdscr):
             if codePosition+1 > codeLength:
                 code+=' '
             codePosition += 1
-            stdscr.move(y, x + 1)
+            if x+1 >= width: stdscr.move(y + 1, 0)
+            else: stdscr.move(y, x + 1)
 
 
         elif c == curses.KEY_UP:
@@ -386,11 +390,14 @@ def main(stdscr):
         elif c in KEY_BACKSPACE:
             debugFileOut = True
 
-            if x > PREFIXlen-1:
+            if x > PREFIXlen-1 or y > linesStartingY:
                 if hinted:
                     clear_suggestion(stdscr=stdscr, start=lastCursorX, end=width, step=1, y=y)
                     hinted = False
                 stdscr.delch(y, x)
+                if x == 0:
+                    y-=1 ; x=width-1
+                    stdscr.move(y, x)
 
                 if 0 < codePosition < codeLength:
                     tmpStart = codePosition - 1 if codePosition - 1 > 0 else 0
@@ -522,7 +529,7 @@ def main(stdscr):
                         stdscr.move(y, 0)
                     else:
                         stdscr.move(y + 1, 0)
-
+                linesStartingY=y
                 stdscr.addstr(PREFIX, curses.color_pair(2))
                 code = ''
                 codePosition = 0
@@ -558,13 +565,27 @@ def main(stdscr):
                 else:
                     code = code[:codePosition] + chr(c) + code[codePosition:]
                 codePosition += 1
-                delete_line(stdscr=stdscr, start=x - 1 + len(code[codePosition:]), end=x - 1, step=-1, y=y)
-                stdscr.addstr(code[codePosition:])
+                if len(code)+PREFIXlen < width: # one-line, update in-place
+                    delete_line(stdscr=stdscr, start=x - 1 + len(code[codePosition:]), end=x - 1, step=-1, y=y)
+                    stdscr.addstr(code[codePosition:])
+                else: # multi-liner, redraw entire code
+                    delete_line(stdscr=stdscr, start=PREFIXlen, end=width, step=1, y=linesStartingY)
+                    for yy in range(y+1,height):
+                        delete_line(stdscr=stdscr, start=0, end=width, step=1, y=yy)
+                    stdscr.move(linesStartingY, PREFIXlen)
+                    tmpY=linesStartingY ; tmpX=PREFIXlen
+                    for character in code:
+                        stdscr.addstr(character)
+                        tmpX+=1
+                        if tmpX >= width: tmpX=0 ; tmpY+=1
+                        stdscr.move(tmpY, tmpX)
+
+
                 stdscr.move(y, x)
                 stdscr.refresh()
 
         if debug and debugFileOut:
-            file_out('w', code,f"{codePosition}/{len(code)} x={x} y={y} bi={history_idx}",extra)
+            file_out('w', code,f"{codePosition}/{len(code)} x={x} y={y} sy={linesStartingY} bi={history_idx}",extra)
 
 
 if __name__ == "__main__":
