@@ -65,7 +65,7 @@ else:
 del sys, compileDict, platform
 
 # constants
-ReplVersion = 'v0.8.0'
+ReplVersion = 'v0.9.0'
 PREFIX = ">>> "
 PREFIXlen = len(PREFIX)
 INDENT = "... "
@@ -241,11 +241,13 @@ def main(stdscr):
     variableInformation = {}
     metaInformation = []
     codePosition = 0
-    stdscr.addstr(f"ASnake {ASnakeVersion} \nRepl {ReplVersion}\n\n")
+    preface = f"ASnake {ASnakeVersion} \nRepl {ReplVersion}\n\n"
+    prefaceLEN = preface.count('\n')
+    stdscr.addstr(preface)
     stdscr.addstr(PREFIX, curses.color_pair(2))
 
     def skipToCharacter(stdscr, x, y, stopCharacters=stopCharacters, direction='left', delete=False):
-        nonlocal code, codePosition
+        nonlocal code, codePosition, extra
         tmpPosition = 0 if direction == 'left' else len(code)+1
 
         i = 1 if direction == 'left' else -1
@@ -253,13 +255,15 @@ def main(stdscr):
         if direction == 'right' and codePosition-i >= len(code)-1: return
         elif direction == 'left' and codePosition <= 0: return
         # skip multiple
-        while code[codePosition - i] in stopCharacters:
-            if direction == 'left':
-                codePosition -= 1
-            elif direction == 'right':
-                codePosition += 1
-            i += 1 if direction == 'left' else -1
-            if not (0 <= codePosition-1 <= len(code)-1) : break
+        try:
+            while code[codePosition - i] in stopCharacters:
+                if direction == 'left':
+                    codePosition -= 1
+                elif direction == 'right':
+                    codePosition += 1
+                i += 1 if direction == 'left' else -1
+                if not (0 <= codePosition-1 <= len(code)-1) : break
+        except IndexError: return
         i = 1 if direction == 'left' else -1
 
         if direction == 'left':
@@ -268,19 +272,63 @@ def main(stdscr):
             theRange = range(codePosition, len(code)-1, 1)
         for char in theRange:
             if code[char - i] in stopCharacters:
+                if code[char - i] == ' ':
+                    try:
+                        if code[char - i*2] != ' ':
+                            pass
+                        else: continue
+                    except IndexError: pass
                 tmpPosition = char ; break
         if delete: code = code[:tmpPosition]
         if tmpPosition > len(code): tmpPosition-=1
         codePosition = tmpPosition
-        tmpPosition = tmpPosition + PREFIXlen - i
+
+        if codePosition <= width-PREFIXlen:
+            tmpY = linesStartingY
+            tmpPosition = tmpPosition + PREFIXlen - i
+        else:
+            tmpY = (codePosition // width)
+            tmpPosition = (codePosition - (width*tmpY))
+            if y == linesStartingY: tmpPosition += PREFIXlen
+            if direction == 'right': tmpY += y
+            else:  tmpY += prefaceLEN
         if delete:
             delete_line(stdscr=stdscr, start=x, end=tmpPosition, step=-1, y=y)
-        stdscr.move(y, tmpPosition + 1)
+        extra = f'{direction} {width=} {codeLength=} tmpPosition={tmpPosition-1 if direction == 'right' else tmpPosition+1} | {tmpY=}'
+        with open('test.txt','w') as f:
+            f.write(extra)
+        stdscr.move(tmpY, tmpPosition-1 if direction == 'right' else tmpPosition+1)
 
-    linesStartingY = 3
+    def exitRoutine():
+        nonlocal child
+        if 'ASnakeREPLCommand.txt' in listdir():
+            try:
+                remove('ASnakeREPLCommand.txt')
+            except:
+                pass
+            try:
+                child.terminate()
+            except:
+                pass
+        exit()
+
+    def redraw(stdscr):
+        delete_line(stdscr=stdscr, start=PREFIXlen, end=width, step=1, y=linesStartingY)
+        for yy in range(y + 1, height):
+            delete_line(stdscr=stdscr, start=0, end=width, step=1, y=yy)
+        stdscr.move(linesStartingY, PREFIXlen)
+        tmpY = linesStartingY;
+        tmpX = PREFIXlen
+        for character in code:
+            stdscr.addstr(character)
+            tmpX += 1
+            if tmpX >= width: tmpX = 0; tmpY += 1
+            stdscr.move(tmpY, tmpX)
+
+    linesStartingY = prefaceLEN
     history_idx = 0
     while True:
-        if childPoll() == 0: exit()
+        if childPoll() == 0: exitRoutine()
         c = stdscr_getch()
         codeLength = len(code)
         # notetoself: x and y are cursor position
@@ -301,8 +349,7 @@ def main(stdscr):
                 if x == 0:
                     y-=1 ; x=width
                 stdscr.move(y, x - 1)
-                if codePosition <= codeLength and x - PREFIXlen <= codePosition:
-                    codePosition -= 1
+                codePosition -= 1
 
         elif c == curses.KEY_RIGHT:
             debugFileOut = True
@@ -400,8 +447,10 @@ def main(stdscr):
                     stdscr.move(y, x)
 
                 if 0 < codePosition < codeLength:
-                    tmpStart = codePosition - 1 if codePosition - 1 > 0 else 0
-                    code = code[:tmpStart] + code[codePosition:]
+                    code = code[:codePosition - 1 if codePosition - 1 > 0 else 0] + code[codePosition:]
+                    codePosition-=1
+                    redraw(stdscr) # jumpy
+                    stdscr.move(y, x)
                 else:
                     code = code[:-1]
                 hinted = display_hint(stdscr, y, x, code, lastCursorX=0, after_appending=0, hinted=hinted, maxX=0)
@@ -436,7 +485,7 @@ def main(stdscr):
                         ASError = False
 
                     with open('ASnakeREPLCommand.lock','w') as f:
-                        f.write('x')
+                        pass
                     with open('ASnakeREPLCommand.txt','w') as f:
                         f.write(compiledCode)
                     remove('ASnakeREPLCommand.lock')
@@ -458,10 +507,7 @@ def main(stdscr):
                         while True:
                             # show output by character
                             if childPoll() is not None:
-                                if 'ASnakeREPLCommand.txt' in listdir():
-                                    try: remove('ASnakeREPLCommand.txt')
-                                    except: pass
-                                exit()
+                                exitRoutine()
                             elif addByte:
                                 output += readChildStdout(1)
                                 addByte=False
@@ -529,13 +575,24 @@ def main(stdscr):
                         stdscr.move(y, 0)
                     else:
                         stdscr.move(y + 1, 0)
-                linesStartingY=y
+                linesStartingY=y+1
                 stdscr.addstr(PREFIX, curses.color_pair(2))
                 code = ''
                 codePosition = 0
                 stdscr.refresh()
         elif c == 3 and isWindows: # ctrl c
             raise KeyboardInterrupt
+        elif c == 4 and not isWindows:
+            if not code:
+                exitRoutine()
+            else:
+                curses.beep()
+                if x >= codeLength+PREFIXlen:
+                    stdscr.delch(y, x-2)
+                    stdscr.delch(y, x-2)
+                else:
+                    redraw(stdscr)
+                    stdscr.move(y,x-2)
         elif c == CTRL_W: # ctrl w
             debugFileOut = True
             if codePosition <= 0:
@@ -547,6 +604,16 @@ def main(stdscr):
             skipToCharacter(stdscr, x, y)
         elif c in CTRL_RIGHT:
             skipToCharacter(stdscr, x, y, direction='right')
+        elif c == 575 and y > linesStartingY: # ctrl_up
+            if y-1 == linesStartingY and x <= PREFIXlen:
+                stdscr.move(y - 1, PREFIXlen)
+                codePosition-=width-PREFIXlen
+            else:
+                stdscr.move(y-1, x)
+                codePosition-=width
+        elif c in {534,'Ȗ'} and codeLength > width: # ctrl_down
+            if codeLength // width > codePosition // width:
+                stdscr.move(y+1, x)
         elif c == -1: pass
         else:
             debugFileOut = True
@@ -569,16 +636,7 @@ def main(stdscr):
                     delete_line(stdscr=stdscr, start=x - 1 + len(code[codePosition:]), end=x - 1, step=-1, y=y)
                     stdscr.addstr(code[codePosition:])
                 else: # multi-liner, redraw entire code
-                    delete_line(stdscr=stdscr, start=PREFIXlen, end=width, step=1, y=linesStartingY)
-                    for yy in range(y+1,height):
-                        delete_line(stdscr=stdscr, start=0, end=width, step=1, y=yy)
-                    stdscr.move(linesStartingY, PREFIXlen)
-                    tmpY=linesStartingY ; tmpX=PREFIXlen
-                    for character in code:
-                        stdscr.addstr(character)
-                        tmpX+=1
-                        if tmpX >= width: tmpX=0 ; tmpY+=1
-                        stdscr.move(tmpY, tmpX)
+                    redraw(stdscr)
 
 
                 stdscr.move(y, x)
