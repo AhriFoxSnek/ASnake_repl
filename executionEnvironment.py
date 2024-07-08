@@ -10,9 +10,7 @@ while True:
                 try:
                     exec(_.read())
                 except KeyboardInterrupt:
-                    try:
-                        remove('ASnakeREPLCommand.txt')
-                    except: raise KeyboardInterrupt
+                    raise KeyboardInterrupt
         except KeyboardInterrupt:
             pass
         except Exception as e:
