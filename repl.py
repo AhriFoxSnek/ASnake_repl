@@ -65,7 +65,7 @@ else:
 del sys, compileDict, platform
 
 # constants
-ReplVersion = 'v0.9.0'
+ReplVersion = 'v0.9.1'
 PREFIX = ">>> "
 PREFIXlen = len(PREFIX)
 INDENT = "... "
@@ -247,7 +247,7 @@ def main(stdscr):
     stdscr.addstr(PREFIX, curses.color_pair(2))
 
     def skipToCharacter(stdscr, x, y, stopCharacters=stopCharacters, direction='left', delete=False):
-        nonlocal code, codePosition, extra
+        nonlocal code, codePosition #, extra
         tmpPosition = 0 if direction == 'left' else len(code)+1
 
         i = 1 if direction == 'left' else -1
@@ -449,7 +449,7 @@ def main(stdscr):
                 if 0 < codePosition < codeLength:
                     code = code[:codePosition - 1 if codePosition - 1 > 0 else 0] + code[codePosition:]
                     codePosition-=1
-                    redraw(stdscr) # jumpy
+                    redraw(stdscr)
                     stdscr.move(y, x)
                 else:
                     code = code[:-1]
@@ -476,7 +476,7 @@ def main(stdscr):
                     if code and (not bash_history or code != bash_history[-1]):
                         bash_history.append(code)
                     history_idx = len(bash_history)
-                    delete_line(stdscr=stdscr, start=width-1, end=PREFIXlen + len(code) - 1, step=-1, y=y)
+                    delete_line(stdscr=stdscr, start=width - 1, end=PREFIXlen + len(code) - 1, step=-1, y=y)
 
                     compiledCode, variableInformation, metaInformation = buildCode(code, variableInformation, metaInformation)
                     if compiledCode.startswith(f'# ASnake {ASnakeVersion} ERROR'):
@@ -484,25 +484,24 @@ def main(stdscr):
                     else:
                         ASError = False
 
-                    with open('ASnakeREPLCommand.lock','w') as f:
+                    with open('ASnakeREPLCommand.lock', 'w') as f:
                         pass
-                    with open('ASnakeREPLCommand.txt','w') as f:
+                    with open('ASnakeREPLCommand.txt', 'w') as f:
                         f.write(compiledCode)
                     remove('ASnakeREPLCommand.lock')
-
                     if firstLine:
                         if isWindows:
                             stdscr.move(y, 0)
                         else:
-                            stdscr.move(y+1, 0)
+                            stdscr.move(y + 1, 0)
                     elif isWindows:
-                        stdscr.move(y-1, width-1)
+                        stdscr.move(y - 1, width - 1)
+                    if not isWindows and not firstLine and (PREFIXlen+len(code))//width >= 1 and y+1 < height:
+                        stdscr.move(y+1, 0) # prevents cutoff of multi-line code
                     firstLine = False
 
-
-
-                    addByte=False
-                    output=''
+                    addByte = False
+                    output = ''
                     try:
                         while True:
                             # show output by character
@@ -510,13 +509,13 @@ def main(stdscr):
                                 exitRoutine()
                             elif addByte:
                                 output += readChildStdout(1)
-                                addByte=False
+                                addByte = False
                             else:
                                 output = readChildStdout(1)
                             try:
                                 output = output.decode()
                             except UnicodeDecodeError:
-                                addByte=True
+                                addByte = True
                                 continue
                             if output:
                                 if output == exitByte and 'ASnakeREPLCommand.txt' not in listdir():
@@ -526,7 +525,7 @@ def main(stdscr):
                                     ASError = True
                                     continue
                                 elif isWindows and output == '\r':
-                                    output=''
+                                    output = ''
                             else:
                                 continue
 
@@ -539,9 +538,10 @@ def main(stdscr):
                             stdscr.refresh()
                             if isWindows:
                                 tmp = stdscr.getch()
-                                if tmp == 3: 
+                                if tmp == 3:
                                     raise KeyboardInterrupt
-                                else: pass
+                                else:
+                                    pass
                     except KeyboardInterrupt:
                         if isWindows:
                             call(['taskkill', '/PID', str(child.pid), '/F'], stderr=DEVNULL, stdout=PIPE)
@@ -558,24 +558,24 @@ def main(stdscr):
                             try:
                                 output = output.decode()
                             except UnicodeDecodeError:
-                                addByte=True
+                                addByte = True
                                 continue
                             if not output or output == exitByte and 'ASnakeREPLCommand.txt' not in listdir():
                                 break
-                        stdscr.addstr('\nKeyboardInterrupt',curses.color_pair(3))
+                        stdscr.addstr('\nKeyboardInterrupt', curses.color_pair(3))
                         y, _ = stdscr.getyx()
-                        if y+1 < height:
-                            stdscr.move(y + 1, 0) ; y+=1
+                        if y + 1 < height:
+                            stdscr.move(y + 1, 0) ; y += 1
                         if isWindows:
                             child = Popen(f'{pyCall} -u {runFile}', stdout=PIPE, cwd=getcwd(), shell=False)
-                            firstLine=True
+                            firstLine = True
                     child.stdout.flush()
                 else:
                     if isWindows:
                         stdscr.move(y, 0)
                     else:
                         stdscr.move(y + 1, 0)
-                linesStartingY=y
+                linesStartingY = y
                 stdscr.addstr(PREFIX, curses.color_pair(2))
                 code = ''
                 codePosition = 0
