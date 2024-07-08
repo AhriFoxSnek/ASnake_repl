@@ -294,9 +294,9 @@ def main(stdscr):
             else:  tmpY += prefaceLEN
         if delete:
             delete_line(stdscr=stdscr, start=x, end=tmpPosition, step=-1, y=y)
-        extra = f'{direction} {width=} {codeLength=} tmpPosition={tmpPosition-1 if direction == 'right' else tmpPosition+1} | {tmpY=}'
-        with open('test.txt','w') as f:
-            f.write(extra)
+        #extra = f'{direction} {width=} {codeLength=} tmpPosition={tmpPosition-1 if direction == 'right' else tmpPosition+1} | {tmpY=}'
+        #with open('test.txt','w') as f:
+        #    f.write(extra)
         stdscr.move(tmpY, tmpPosition-1 if direction == 'right' else tmpPosition+1)
 
     def exitRoutine():
@@ -565,7 +565,7 @@ def main(stdscr):
                         stdscr.addstr('\nKeyboardInterrupt',curses.color_pair(3))
                         y, _ = stdscr.getyx()
                         if y+1 < height:
-                            stdscr.move(y + 1, 0)
+                            stdscr.move(y + 1, 0) ; y+=1
                         if isWindows:
                             child = Popen(f'{pyCall} -u {runFile}', stdout=PIPE, cwd=getcwd(), shell=False)
                             firstLine=True
@@ -575,7 +575,7 @@ def main(stdscr):
                         stdscr.move(y, 0)
                     else:
                         stdscr.move(y + 1, 0)
-                linesStartingY=y+1
+                linesStartingY=y
                 stdscr.addstr(PREFIX, curses.color_pair(2))
                 code = ''
                 codePosition = 0
@@ -604,16 +604,21 @@ def main(stdscr):
             skipToCharacter(stdscr, x, y)
         elif c in CTRL_RIGHT:
             skipToCharacter(stdscr, x, y, direction='right')
-        elif c == 575 and y > linesStartingY: # ctrl_up
-            if y-1 == linesStartingY and x <= PREFIXlen:
-                stdscr.move(y - 1, PREFIXlen)
-                codePosition-=width-PREFIXlen
-            else:
-                stdscr.move(y-1, x)
-                codePosition-=width
-        elif c in {534,'Ȗ'} and codeLength > width: # ctrl_down
-            if codeLength // width > codePosition // width:
-                stdscr.move(y+1, x)
+        elif c in {575, 'ȿ'}: # ctrl_up
+            # don't combine with elif, we want to trap that input
+            if y > linesStartingY:
+                if y-1 == linesStartingY and x <= PREFIXlen:
+                    stdscr.move(y - 1, PREFIXlen)
+                    codePosition-=width-PREFIXlen
+                else:
+                    stdscr.move(y-1, x)
+                    codePosition-=width
+        elif c in {534,'Ȗ'}: # ctrl_down
+            if codeLength > width:
+                if codeLength // width > codePosition // width and abs((y-linesStartingY) * width + x) <= codeLength:
+                    stdscr.move(y + 1, x)
+                    codePosition = abs((y+1-linesStartingY) * width + x)
+                    if y == linesStartingY: codePosition-=PREFIXlen
         elif c == -1: pass
         else:
             debugFileOut = True
