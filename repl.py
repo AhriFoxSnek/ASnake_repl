@@ -65,7 +65,7 @@ else:
 del sys, compileDict, platform
 
 # constants
-ReplVersion = 'v0.9.1'
+ReplVersion = 'v0.9.2'
 PREFIX = ">>> "
 PREFIXlen = len(PREFIX)
 INDENT = "... "
@@ -243,6 +243,7 @@ def main(stdscr):
     codePosition = 0
     preface = f"ASnake {ASnakeVersion} \nRepl {ReplVersion}\n\n"
     prefaceLEN = preface.count('\n')
+    stdscr.scrollok(True)
     stdscr.addstr(preface)
     stdscr.addstr(PREFIX, curses.color_pair(2))
 
@@ -325,6 +326,14 @@ def main(stdscr):
             if tmpX >= width: tmpX = 0; tmpY += 1
             stdscr.move(tmpY, tmpX)
 
+    def bigClear():
+        for _y in range(height - 1, linesStartingY, -1):
+            for _ in range(height - linesStartingY + 3):
+                delete_line(stdscr=stdscr, start=0, end=width, step=1, y=_y)
+        for _ in range(y - linesStartingY + 2):
+            delete_line(stdscr=stdscr, start=PREFIXlen, end=width, step=1, y=linesStartingY)
+        stdscr.move(linesStartingY, PREFIXlen)
+
     linesStartingY = prefaceLEN
     history_idx = 0
     while True:
@@ -375,7 +384,11 @@ def main(stdscr):
                     history_idx -= 1
                     if history_idx < 0: history_idx=0
                     code = bash_history[history_idx]
-                delete_line(stdscr=stdscr, start=x, end=PREFIXlen - 1, step=-1, y=y)
+
+                if y > linesStartingY: # when an entry is multiline, clear the heck out of everything
+                    bigClear()
+                else:
+                    delete_line(stdscr=stdscr, start=x, end=PREFIXlen - 1, step=-1, y=y)
                 stdscr.addstr(bash_history[history_idx])
                 codePosition += len(bash_history[history_idx])
 
@@ -384,14 +397,21 @@ def main(stdscr):
             if history_idx < len(bash_history) - 1:
                 # later history
                 history_idx += 1
-                delete_line(stdscr=stdscr, start=x, end=PREFIXlen - 1, step=-1, y=y)
+                if y > linesStartingY: # when an entry is multiline, clear the heck out of everything
+                    bigClear()
+                else:
+                    #delete_line(stdscr=stdscr, start=x, end=PREFIXlen - 1, step=1, y=y)
+                    delete_line(stdscr=stdscr, start=PREFIXlen, end=width - 1, step=1, y=linesStartingY)
+                    stdscr.move(linesStartingY, prefaceLEN+1)
+
                 stdscr.addstr(bash_history[history_idx])
                 code = bash_history[history_idx]
                 codePosition += len(bash_history[history_idx])
             else:
                 # the most down should be blank
                 history_idx = len(bash_history)
-                delete_line(stdscr=stdscr, start=x, end=PREFIXlen - 1, step=-1, y=y)
+                bigClear()
+                delete_line(stdscr=stdscr, start=width-1, end=PREFIXlen-1, step=-1, y=linesStartingY)
 
         # tab -> for auto-complete feature
         elif c == KEY_TAB:
@@ -463,9 +483,8 @@ def main(stdscr):
         elif c in KEY_ENTER:
             debugFileOut = True
 
-            if y >= height - 1:
-                stdscr.clear()
-                stdscr.refresh()
+            if False and y >= height - 1:
+                pass
             elif code and code[-1]=='\\':
                 stdscr.move(y+1, 0)
                 stdscr.addstr(INDENT, curses.color_pair(2))
@@ -496,8 +515,17 @@ def main(stdscr):
                             stdscr.move(y + 1, 0)
                     elif isWindows:
                         stdscr.move(y - 1, width - 1)
-                    if not isWindows and not firstLine and (PREFIXlen+len(code))//width >= 1 and y+1 < height:
-                        stdscr.move(y+1, 0) # prevents cutoff of multi-line code
+
+                    tmpCodeYLen = (PREFIXlen + len(code)) // width + 1
+                    if not isWindows and not firstLine and tmpCodeYLen >= 1 and y+1 < height:
+                        tmpIndex=(codePosition//width)+1
+                        if tmpIndex < tmpCodeYLen:
+                            tmp = y + (tmpCodeYLen - tmpIndex) + 1
+                        else:
+                            tmp=y+1
+                        stdscr.move(tmp, 0) # prevents cutoff of multi-line code
+                        del tmp , tmpIndex
+                    del tmpCodeYLen
                     firstLine = False
 
                     addByte = False
@@ -530,11 +558,10 @@ def main(stdscr):
                                 continue
 
                             for i in range(len(output)):
+                                stdscr.scrollok(True)
                                 stdscr.addstr(f"{output[i]}", curses.color_pair(3) if ASError else curses.color_pair(1))
-                                y, x = stdscr.getyx()
-                                if y >= height - 1:
-                                    stdscr.clear()
-                                    stdscr.move(0, 0)
+
+
                             stdscr.refresh()
                             if isWindows:
                                 tmp = stdscr.getch()
@@ -574,7 +601,9 @@ def main(stdscr):
                     if isWindows:
                         stdscr.move(y, 0)
                     else:
-                        stdscr.move(y + 1, 0)
+                        try: stdscr.move(y + 1, 0)
+                        except: stdscr.addstr('\n')
+                y, x = stdscr.getyx()
                 linesStartingY = y
                 stdscr.addstr(PREFIX, curses.color_pair(2))
                 code = ''
@@ -604,7 +633,7 @@ def main(stdscr):
             skipToCharacter(stdscr, x, y)
         elif c in CTRL_RIGHT:
             skipToCharacter(stdscr, x, y, direction='right')
-        elif c in {575, 'ȿ'}: # ctrl_up
+        elif c == 575: # ctrl_up
             # don't combine with elif, we want to trap that input
             if y > linesStartingY:
                 if y-1 == linesStartingY and x <= PREFIXlen:
@@ -613,13 +642,13 @@ def main(stdscr):
                 else:
                     stdscr.move(y-1, x)
                     codePosition-=width
-        elif c in {534,'Ȗ'}: # ctrl_down
+        elif c == 534: # ctrl_down
             if codeLength > width:
                 if codeLength // width > codePosition // width and abs((y-linesStartingY) * width + x) <= codeLength:
                     stdscr.move(y + 1, x)
                     codePosition = abs((y+1-linesStartingY) * width + x)
                     if y == linesStartingY: codePosition-=PREFIXlen
-        elif c == -1: pass
+        elif c in {-1, 410}: pass
         else:
             debugFileOut = True
             if codePosition == codeLength:
