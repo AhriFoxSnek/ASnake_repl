@@ -65,13 +65,16 @@ else:
 del sys, compileDict, platform
 
 # constants
-ReplVersion = 'v0.9.2'
+ReplVersion = 'v0.10.0'
 PREFIX = ">>> "
 PREFIXlen = len(PREFIX)
 INDENT = "... "
 INDENTlen = len(INDENT)
 SPACE = '  '
 SPACElen = len(SPACE)
+checkIfIndent   = re_compile('^(?: |\t)*(?:if|elif|case|of|else|while|def) .+(:|;| do| then) *$').search
+exitIndent      = re_compile(f'\n{SPACE}+$').search
+deIndent        = re_compile(f'\n{SPACE}+').findall
 
 
 # for debugging only
@@ -208,7 +211,7 @@ def main(stdscr):
     exitByte = chr(999999)
     errorByte = chr(999998)
     KEY_TAB = ord('\t')
-    KEY_BACKSPACE = {curses.KEY_BACKSPACE, 127, 8}
+    KEY_BACKSPACE = {curses.KEY_BACKSPACE, 127, 8, 330}
     KEY_ENTER = {curses.KEY_ENTER, 10, 13}
     CTRL_LEFT = {ord('Ȧ'),ord('Ȫ'),ord('ȫ'), 564}
     CTRL_RIGHT = {ord('ȵ'), ord('ȹ'), ord('ŋ'), 561}
@@ -232,10 +235,13 @@ def main(stdscr):
     extra = ''
     debugFileOut=False
 
+    # v normal vars v
     after_appending = 0
     lastCursorX: int = 4
     hinted: bool = False
     firstLine: bool = True
+    inIndent: bool = False
+    currentIndent: int = 0
 
     code = ''
     variableInformation = {}
@@ -462,6 +468,7 @@ def main(stdscr):
                     clear_suggestion(stdscr=stdscr, start=lastCursorX, end=width, step=1, y=y)
                     hinted = False
                 stdscr.delch(y, x)
+
                 if x == 0:
                     y-=1 ; x=width-1
                     stdscr.move(y, x)
@@ -473,7 +480,12 @@ def main(stdscr):
                     stdscr.move(y, x)
                 else:
                     code = code[:-1]
+                if c == 330: stdscr.move(y, x - 1) # DEL key
                 hinted = display_hint(stdscr, y, x, code, lastCursorX=0, after_appending=0, hinted=hinted, maxX=0)
+
+                if inIndent and exitIndent(code) != None and len(deIndent(code)[-2]) > len(code.split('\n')[-1]):
+                    # take deindent to next line
+                    currentIndent = len(code.split('\n')[-1])//SPACElen
             else:
                 stdscr.move(y, x + 1)
             if code == '' and x <= PREFIXlen:
@@ -483,13 +495,20 @@ def main(stdscr):
         elif c in KEY_ENTER:
             debugFileOut = True
 
-            if False and y >= height - 1:
-                pass
-            elif code and code[-1]=='\\':
+            if code and code[-1]=='\\':
                 stdscr.move(y+1, 0)
                 stdscr.addstr(INDENT, curses.color_pair(2))
                 lastCursorX = INDENTlen
+            elif code and ((inIndent and exitIndent(code) == None) or (not inIndent and checkIfIndent(code) != None)):
+                if checkIfIndent(code.split('\n'+(SPACE*currentIndent))[-1]) != None:
+                    currentIndent+=1
+                code+='\n'+(SPACE*currentIndent) ; codePosition+=1+(SPACElen*currentIndent)
+                stdscr.move(y+1, 0)
+                stdscr.addstr(INDENT+(SPACE*currentIndent), curses.color_pair(2))
+                lastCursorX = INDENTlen
+                inIndent = True
             else:
+                inIndent = False ;  currentIndent=0
                 if code:
                     # evaluate the line/block
                     if code and (not bash_history or code != bash_history[-1]):
@@ -558,9 +577,7 @@ def main(stdscr):
                                 continue
 
                             for i in range(len(output)):
-                                stdscr.scrollok(True)
                                 stdscr.addstr(f"{output[i]}", curses.color_pair(3) if ASError else curses.color_pair(1))
-
 
                             stdscr.refresh()
                             if isWindows:
@@ -589,7 +606,7 @@ def main(stdscr):
                                 continue
                             if not output or output == exitByte and 'ASnakeREPLCommand.txt' not in listdir():
                                 break
-                        stdscr.addstr('\nKeyboardInterrupt', curses.color_pair(3))
+                        stdscr.addstr('\nKeyboardInterrupt\n', curses.color_pair(3))
                         y, _ = stdscr.getyx()
                         if y + 1 < height:
                             stdscr.move(y + 1, 0) ; y += 1
