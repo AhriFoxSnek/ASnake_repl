@@ -193,11 +193,23 @@ if noDill:
     runFile='executionEnvironmentNoDill.py'
 else:
     runFile='executionEnvironment.py'
-
+from time import sleep
 def main(stdscr):
     isWindows = True if OS == 'windows' else False
     child = Popen(f'{pyCall} -u {runFile}', stdout=PIPE, cwd=getcwd(), shell=False if isWindows else True)
-
+    def exitRoutine():
+        nonlocal child
+        if 'ASnakeREPLCommand.txt' in listdir():
+            try:
+                remove('ASnakeREPLCommand.txt')
+            except:
+                pass
+            try:
+                child.terminate()
+            except:
+                pass
+        exit()
+    
     # preallocated functions
     readChildStdout = child.stdout.read
     childPoll = child.poll
@@ -217,7 +229,7 @@ def main(stdscr):
     # shift left 393 ; shift right 402
     # alt tab 27
     # backslash 92
-
+    
     # colors
     curses.use_default_colors()
     curses.init_pair(1, curses.COLOR_WHITE, -1)  # for usual text
@@ -227,9 +239,8 @@ def main(stdscr):
     curses.init_pair(6, curses.COLOR_MAGENTA, -1) # for numbers
     if isWindows:
         curses.init_pair(4, curses.COLOR_YELLOW, -1)
-        stdscr.nodelay(1)
     curses.echo()
-
+    
     # vv debug vars vv
     debug: bool = True  # enables file output of useful info for debugging
     extra = ''
@@ -257,10 +268,7 @@ def main(stdscr):
     codePosition = 0
     preface = f"ASnake {ASnakeVersion} \nRepl {ReplVersion}\n\n"
     prefaceLEN = preface.count('\n')
-    stdscr.scrollok(True)
-    stdscr.addstr(preface)
-    stdscr.addstr(PREFIX, curses.color_pair(2))
-
+    
     def skipToCharacter(stdscr, x, y, stopCharacters=stopCharacters, direction='left', delete=False):
         nonlocal code, codePosition #, extra
         tmpPosition = 0 if direction == 'left' else len(code)+1
@@ -310,19 +318,6 @@ def main(stdscr):
         if delete:
             delete_line(stdscr=stdscr, start=x, end=tmpPosition, step=-1, y=y)
         stdscr.move(tmpY, tmpPosition-1 if direction == 'right' else tmpPosition+1)
-
-    def exitRoutine():
-        nonlocal child
-        if 'ASnakeREPLCommand.txt' in listdir():
-            try:
-                remove('ASnakeREPLCommand.txt')
-            except:
-                pass
-            try:
-                child.terminate()
-            except:
-                pass
-        exit()
 
     def redraw(stdscr):
         nonlocal x,y
@@ -421,6 +416,11 @@ def main(stdscr):
         else:
             stdscr.move(theY, theX)
 
+    # setup
+    stdscr.scrollok(True)
+    stdscr.addstr(preface)
+    stdscr.addstr(PREFIX, curses.color_pair(2))
+    
     linesStartingY = prefaceLEN
     history_idx = 0
     while True: # begin the REPL
@@ -601,7 +601,10 @@ def main(stdscr):
             debugFileOut = True
 
             if code and code[-1]=='\\':
-                stdscr.move(y+1, 0)
+                if isWindows:
+                    stdscr.move(y, 0)
+                else:
+                    stdscr.move(y+1, 0)
                 stdscr.addstr(INDENT, curses.color_pair(2))
                 lastCursorX = INDENTlen
             elif code and ((inIndent and exitIndent(code) == None) or (not inIndent and checkIfIndent(code) != None)):
@@ -611,7 +614,10 @@ def main(stdscr):
                 # ^ entering the current line into the bash history instead of the whole code ensures stability when going up and down history
                 code+='\n'+(SPACE*currentIndent) ; codePosition+=1+(SPACElen*currentIndent)
                 if y+1 < height:
-                    stdscr.move(y+1, 0)
+                    if isWindows:
+                        stdscr.move(y, 0)
+                    else:
+                        stdscr.move(y+1, 0)
                 else:
                     stdscr.scroll(1)
                 stdscr.addstr(INDENT+(SPACE*currentIndent), curses.color_pair(2))
@@ -645,6 +651,7 @@ def main(stdscr):
                             scrollWhenYOverflow(y+1,0)
                     elif isWindows:
                         stdscr.move(y - 1, width - 1)
+                    if isWindows: stdscr.nodelay(1)
 
                     tmpCodeYLen = (PREFIXlen + len(code)) // width
                     if not isWindows and not firstLine and tmpCodeYLen >= 1 and y+1 < height:
@@ -724,6 +731,7 @@ def main(stdscr):
                         if isWindows:
                             child = Popen(f'{pyCall} -u {runFile}', stdout=PIPE, cwd=getcwd(), shell=False)
                             firstLine = True
+                    if isWindows: stdscr.nodelay(0)
                     child.stdout.flush()
                 else:
                     if isWindows:
