@@ -107,24 +107,6 @@ def get_hint(word,seperateBasedOnCharacter=True):
     return ''
 
 
-def display_hint(stdscr, y: int, x: int, code: str, lastCursorX: int, after_appending: int, hinted: bool, maxX: int):
-    if hinted:  # delete last hint
-        clear_suggestion(stdscr=stdscr, start=lastCursorX + 1, end=maxX, step=1, y=y)
-        stdscr.delch(y, lastCursorX)
-        stdscr.move(y, lastCursorX)
-    if not get_hint(code):
-        return False
-    for i in range(after_appending, lastCursorX, -1):
-        stdscr.delch(y, i)
-    if 'windows' == OS:
-        color = curses.color_pair(4)
-    else:
-        color = curses.color_pair(1) | curses.A_DIM
-    stdscr.addstr(y, x + len(code.split()[-1][len(code):]), get_hint(code.split()[-1])[abs(len(get_last_substring(code,False))-len(code)):], color)
-    stdscr.move(y, x)
-    return True
-
-
 def delete_line(stdscr, start, end, step, y):
     for i in range(start, end, step):
         stdscr.delch(y, i)
@@ -133,6 +115,24 @@ def clear_suggestion(stdscr, start, end, step, y):
     delete_line(stdscr, start, end, step, y)
     stdscr.delch(y, start)
     stdscr.move(y, start)
+
+def display_hint(stdscr, y: int, x: int, code: str, lastCursorX: int, after_appending: int, hinted: bool, maxX: int):
+    if hinted:  # delete last hint
+        clear_suggestion(stdscr=stdscr, start=lastCursorX + 2, end=maxX, step=1, y=y)
+        stdscr.delch(y, lastCursorX+1)
+        stdscr.move(y, lastCursorX+1)
+    if not get_hint(code):
+        return False
+    for i in range(after_appending, lastCursorX+1, -1):
+        stdscr.delch(y, i)
+    if 'windows' == OS:
+        color = curses.color_pair(4)
+    else:
+        color = curses.color_pair(1) | curses.A_DIM
+    stdscr.addstr(y, (x+1) + len(code.split()[-1][len(code):]), get_hint(code.split()[-1])[abs(len(get_last_substring(code,False))-len(code)):], color)
+    stdscr.move(y, x+1)
+    return True
+    
 
 def buildCode(code, variableInformation, metaInformation):
     output = build(code, comment=False, optimize=False, debug=False, compileTo=compileTo,
@@ -239,13 +239,14 @@ def main(stdscr):
     curses.init_pair(6, curses.COLOR_MAGENTA, -1) # for numbers
     if isWindows:
         curses.init_pair(4, curses.COLOR_YELLOW, -1)
-    curses.echo()
+    curses.noecho()
     
     # vv debug vars vv
     debug: bool = True  # enables file output of useful info for debugging
     extra = ''
     debugFileOut=False
-    debugTryCommands = []
+    debugTryCommands=[]
+    debugTryCommands = ['if 1 do',list(KEY_ENTER)[1],'1',curses.KEY_UP,curses.KEY_DOWN,'2',list(KEY_ENTER)[1],'1',curses.KEY_UP,'3']
     #debugTryCommands = ['if 1 do',list(KEY_ENTER)[1],list(KEY_ENTER)[1],'12',list(KEY_ENTER)[1],curses.KEY_UP,curses.KEY_UP,chr(575),'2',chr(534),'3']
     #debugTryCommands = ['if True do', list(KEY_ENTER)[1], '12', list(KEY_ENTER)[1], list(KEY_ENTER)[1], curses.KEY_UP, curses.KEY_UP, list(KEY_ENTER)[1],curses.KEY_UP, curses.KEY_DOWN]
     # ^ does command on startup to test a specific case
@@ -364,7 +365,7 @@ def main(stdscr):
             stdscr.addstr(character, color)
         else:
             stdscr.addstr(character)
-    def handleSyntaxHighlighting(c,deleteLastChar=True,lastChar=False,customYX=(False,False)):
+    def handleSyntaxHighlighting(c,deleteLastChar=False,lastChar=False,customYX=(False,False)):
         nonlocal inString
         # expects one character, in ord()
         tmpY=customYX[0] if customYX[1] else y
@@ -415,6 +416,7 @@ def main(stdscr):
             stdscr.scroll(1)
         else:
             stdscr.move(theY, theX)
+            
 
     # setup
     stdscr.scrollok(True)
@@ -427,8 +429,8 @@ def main(stdscr):
         if childPoll() == 0: exitRoutine()
         if debug and debugTryCommands:
             c = debugTryCommands.pop(0)
-            if c not in {-1, 410, 337, 534, 526, 575, 567}:
-                stdscr.addstr(chr(c))
+            #if c not in {-1, 410, 337, 534, 526, 575, 567}:
+            #    stdscr.addstr(chr(c))
         else:
             c = stdscr_getch()
         codeLength = len(code)
@@ -440,7 +442,7 @@ def main(stdscr):
             codePosition = codeLength
         elif codePosition < 0:
             codePosition = 0
-
+        
         if c == curses.KEY_LEFT:
             debugFileOut = True
             if hinted:
@@ -466,7 +468,17 @@ def main(stdscr):
 
         elif c == curses.KEY_UP:
             debugFileOut = True
-            if bash_history:
+            if inIndent and y > linesStartingY: # regular going up for editing when multiline
+              stdscr.move(y - 1, x)
+              
+              L = code.split('\n') ; s = i = 0
+              for i, ln in enumerate(L):
+                  if codePosition <= s + len(ln): break
+                  s += len(ln) + 1
+              codePosition = 0 if i == 0 else sum(len(xx) + 1 for xx in L[:i-1]) + min((codePosition - s), len(L[i-1]))
+              del L, s, i
+              
+            elif bash_history:
                 # earlier history
                 if history_idx <= len(bash_history):
                     history_idx -= 1
@@ -500,7 +512,10 @@ def main(stdscr):
 
         elif c == curses.KEY_DOWN:
             debugFileOut = True
-            if history_idx < len(bash_history) - 1:
+            if inIndent and y < height: # regular going down for editing when multiline
+              stdscr.move(y + 1, x)
+              codePosition*=y+1
+            elif history_idx < len(bash_history) - 1:
                 # later history
                 history_idx += 1
                 if y > linesStartingY: # when an entry is multiline, clear the heck out of everything
@@ -572,7 +587,9 @@ def main(stdscr):
                 if hinted:
                     clear_suggestion(stdscr=stdscr, start=lastCursorX, end=width, step=1, y=y)
                     hinted = False
-                stdscr.delch(y, x)
+                if c == 330: stdscr.delch(y, x-1) ; stdscr.move(y, x - 1) # DEL key
+                else:
+                  stdscr.delch(y, x)
 
                 if x == 0:
                     y-=1 ; x=width-1
@@ -582,11 +599,13 @@ def main(stdscr):
                     code = code[:codePosition - 1 if codePosition - 1 > 0 else 0] + code[codePosition:]
                     codePosition-=1
                     redraw(stdscr)
-                    stdscr.move(y, x)
+                    stdscr.move(y, x-1)
                 else:
                     code = code[:-1]
-                if c == 330: stdscr.move(y, x - 1) # DEL key
-                hinted = display_hint(stdscr, y, x, code, lastCursorX=0, after_appending=0, hinted=hinted, maxX=0)
+                    stdscr.move(y, x-1)
+                    codePosition-=1
+                
+                hinted = display_hint(stdscr, y, PREFIXlen+codePosition-1, code, lastCursorX=0, after_appending=0, hinted=hinted, maxX=width)
 
                 if inIndent and exitIndent(code) != None and len(tuple(deIndent(code))) > 1 and len(deIndent(code)[-2]) > len(code.split('\n')[-1]):
                     # take deindent to next line
@@ -604,7 +623,10 @@ def main(stdscr):
                 if isWindows:
                     stdscr.move(y, 0)
                 else:
-                    stdscr.move(y+1, 0)
+                    if y+1 >= height:
+                      stdscr.addstr('\n')
+                    else:
+                      stdscr.move(y+1, 0)
                 stdscr.addstr(INDENT, curses.color_pair(2))
                 lastCursorX = INDENTlen
             elif code and ((inIndent and exitIndent(code) == None) or (not inIndent and checkIfIndent(code) != None)):
@@ -614,12 +636,12 @@ def main(stdscr):
                 # ^ entering the current line into the bash history instead of the whole code ensures stability when going up and down history
                 code+='\n'+(SPACE*currentIndent) ; codePosition+=1+(SPACElen*currentIndent)
                 if y+1 < height:
-                    if isWindows:
-                        stdscr.move(y, 0)
-                    else:
+                    if not isWindows:
                         stdscr.move(y+1, 0)
                 else:
+                    stdscr.move(y, 0)
                     stdscr.scroll(1)
+                
                 stdscr.addstr(INDENT+(SPACE*currentIndent), curses.color_pair(2))
                 lastCursorX = INDENTlen
                 inIndent = True
@@ -812,6 +834,7 @@ def main(stdscr):
                     else:
                         # if a space is done on a suggestion, clear the suggestion
                         clear_suggestion(stdscr=stdscr, start=lastCursorX, end=width, step=1, y=y)
+                stdscr.move(y, x+1)
             else:
                 if codePosition == 0:
                     code = chr(c) + code[codePosition:]
@@ -823,9 +846,8 @@ def main(stdscr):
                     syntaxHighlightString(code[codePosition:])
                 else: # multi-liner, redraw entire code
                     redraw(stdscr)
-
-
-                stdscr.move(y, x)
+                
+                stdscr.move(y, x+1)
                 stdscr.refresh()
 
         if debug and debugFileOut:
