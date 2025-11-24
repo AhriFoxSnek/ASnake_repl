@@ -242,11 +242,11 @@ def main(stdscr):
     curses.noecho()
     
     # vv debug vars vv
-    debug: bool = True  # enables file output of useful info for debugging
+    debug: bool = False  # enables file output of useful info for debugging
     extra = ''
     debugFileOut=False
     debugTryCommands=[]
-    debugTryCommands = ['if 1 do',list(KEY_ENTER)[1],'1',curses.KEY_UP,curses.KEY_DOWN,'2',list(KEY_ENTER)[1],'1',curses.KEY_UP,'3']
+    #debugTryCommands = ['if 1 do',list(KEY_ENTER)[1],'1',curses.KEY_UP,curses.KEY_DOWN,'2',list(KEY_ENTER)[1],'1',curses.KEY_UP,'3']
     #debugTryCommands = ['if 1 do',list(KEY_ENTER)[1],list(KEY_ENTER)[1],'12',list(KEY_ENTER)[1],curses.KEY_UP,curses.KEY_UP,chr(575),'2',chr(534),'3']
     #debugTryCommands = ['if True do', list(KEY_ENTER)[1], '12', list(KEY_ENTER)[1], list(KEY_ENTER)[1], curses.KEY_UP, curses.KEY_UP, list(KEY_ENTER)[1],curses.KEY_UP, curses.KEY_DOWN]
     # ^ does command on startup to test a specific case
