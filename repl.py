@@ -121,7 +121,7 @@ def display_hint(stdscr, y: int, x: int, code: str, lastCursorX: int, after_appe
         clear_suggestion(stdscr=stdscr, start=lastCursorX + 2, end=maxX, step=1, y=y)
         stdscr.delch(y, lastCursorX+1)
         stdscr.move(y, lastCursorX+1)
-    if not get_hint(code):
+    if not get_hint(code.split()[-1]):
         return False
     for i in range(after_appending, lastCursorX+1, -1):
         stdscr.delch(y, i)
@@ -246,8 +246,11 @@ def main(stdscr):
     extra = ''
     debugFileOut=False
     debugTryCommands=[]
+    #debugTryCommands=["fi",curses.KEY_RIGHT]
+    #debugTryCommands=["list frames = ['/','-','\\','|']"]
+    #debugTryCommands=['"f"',curses.KEY_LEFT,"aaaaa",curses.KEY_LEFT,curses.KEY_LEFT,curses.KEY_LEFT,'"','"',curses.KEY_LEFT,'+']
     #debugTryCommands = ['if 1 do',list(KEY_ENTER)[1],'1',curses.KEY_UP,curses.KEY_DOWN,'2',list(KEY_ENTER)[1],'1',curses.KEY_UP,'3']
-    #debugTryCommands = ['if 1 do',list(KEY_ENTER)[1],list(KEY_ENTER)[1],'12',list(KEY_ENTER)[1],curses.KEY_UP,curses.KEY_UP,chr(575),'2',chr(534),'3']
+    #debugTryCommands = ['if 1 do',list(KEY_ENTER)[1],list(KEY_ENTER)[1],'12',list(KEY_ENTER)[1],curses.KEY_UP,curses.KEY_UP,' ',chr(575),'2',chr(534),'3']
     #debugTryCommands = ['if True do', list(KEY_ENTER)[1], '12', list(KEY_ENTER)[1], list(KEY_ENTER)[1], curses.KEY_UP, curses.KEY_UP, list(KEY_ENTER)[1],curses.KEY_UP, curses.KEY_DOWN]
     # ^ does command on startup to test a specific case
     debugTryCommands = [ord(char) if isinstance(item, str) else item for item in debugTryCommands for char in (str(item) if isinstance(item, str) else [item])]
@@ -329,13 +332,13 @@ def main(stdscr):
         xTMP = PREFIXlen
         scrollWhenYOverflow(yTMP, xTMP)
         stdscr.move(yTMP, xTMP)
-        lastChar=False
+        lastChar=False ; tmpInString=False
         for character in code:
-            handleSyntaxHighlighting(ord(character),False,ord(lastChar) if lastChar else False,(yTMP,xTMP))
+            tmpInString = handleSyntaxHighlighting(ord(character),ord(lastChar) if lastChar else False,(yTMP,xTMP),tmpInString=tmpInString)
             xTMP += 1
             if xTMP >= width or character == '\n':
                 xTMP = 0; yTMP += 1
-                if inIndent and not inString and character == '\n':
+                if inIndent and not tmpInString and character == '\n':
                     stdscr.addstr(INDENT, curses.color_pair(2))
                     xTMP = INDENTlen
             stdscr.move(yTMP, xTMP)
@@ -353,20 +356,8 @@ def main(stdscr):
             delete_line(stdscr=stdscr, start=PREFIXlen, end=width, step=1, y=startingY)
         stdscr.move(startingY, PREFIXlen)
 
-    def addCharacter(character,color=False,customYX=(False,False)):
-        # expects one character in chr()
-        stdscr.delch()
-        tmpY=customYX[0] if customYX[1] else y
-        tmpX=customYX[1] if customYX[1] else x
-        if x-1 < 0: tmpY-=1 ; tmpX=width
-        tmpX-=1
-        stdscr.move(tmpY, tmpX)
-        if color:
-            stdscr.addstr(character, color)
-        else:
-            stdscr.addstr(character)
-    def handleSyntaxHighlighting(c,deleteLastChar=False,lastChar=False,customYX=(False,False)):
-        nonlocal inString
+    def handleSyntaxHighlighting(c,lastChar=False,customYX=(False,False), tmpInString=False):
+        #nonlocal extra
         # expects one character, in ord()
         tmpY=customYX[0] if customYX[1] else y
         tmpX=customYX[1] if customYX[1] else x
@@ -376,37 +367,30 @@ def main(stdscr):
         if lastChar: lastCharC=chr(lastChar)
         if c in {34,39}: # string quotes
             if lastChar and lastCharC in 'frb':
-                stdscr.move(tmpY, tmpX-2)
+                stdscr.move(tmpY, tmpX-1)
                 stdscr.addstr(chr(lastChar), GREEN)
-            if not inString:
-                inString = c
-            elif c == inString:
-                inString = False
-            if deleteLastChar:
-                addCharacter(charC, GREEN, customYX)
-            else:
-                stdscr.addstr(charC, GREEN)
-        elif inString:
-            if deleteLastChar:
-                addCharacter(charC, GREEN, customYX)
-            else:
-                stdscr.addstr(charC, GREEN)
+            if not tmpInString:
+                tmpInString = c
+            elif c == tmpInString:
+                tmpInString = False
+            stdscr.addstr(charC, GREEN)
+        elif tmpInString:
+            stdscr.addstr(charC, GREEN)
         elif charC in "0123456789" and ((lastChar and lastCharC in "0123456789 .()*+-/,=&^%$#@{}") or not lastChar):
             if lastChar and lastCharC == '.':
-                stdscr.move(tmpY, tmpX-2)
+                stdscr.move(tmpY, tmpX-1)
                 stdscr.addstr('.', MAGENTA)
-            if deleteLastChar:
-                addCharacter(charC, MAGENTA, customYX)
-            else:
-                stdscr.addstr(charC, MAGENTA)
-        elif not deleteLastChar:
+            stdscr.addstr(charC, MAGENTA)
+        else:
             stdscr.addstr(charC)
+        return tmpInString
 
-    def syntaxHighlightString(theString, deleteLastChar=True, lastChar=False, customYX=(False, False)):
+    def syntaxHighlightString(theString, lastChar=False, customYX=(False, False)):
         # a loop wrapper for handleSyntaxHighlighting
+        tmpInString = inString
         tmpLastChar = lastChar if lastChar else False
         for char in theString:
-            handleSyntaxHighlighting(ord(char), deleteLastChar=deleteLastChar, lastChar=tmpLastChar, customYX=customYX)
+            tmpInString = handleSyntaxHighlighting(ord(char), lastChar=tmpLastChar, customYX=customYX, tmpInString=tmpInString)
             tmpLastChar = ord(char)
 
     def scrollWhenYOverflow(customY=False, customX=False):
@@ -429,10 +413,9 @@ def main(stdscr):
         if childPoll() == 0: exitRoutine()
         if debug and debugTryCommands:
             c = debugTryCommands.pop(0)
-            #if c not in {-1, 410, 337, 534, 526, 575, 567}:
-            #    stdscr.addstr(chr(c))
         else:
             c = stdscr_getch()
+        chrC = chr(c)
         codeLength = len(code)
         # notetoself: x and y are cursor position
         y, x = stdscr_getyx()
@@ -447,18 +430,25 @@ def main(stdscr):
             debugFileOut = True
             if hinted:
                 hinted=False
-                clear_suggestion(stdscr=stdscr, start=lastCursorX, end=width, step=1, y=y)
+                clear_suggestion(stdscr=stdscr, start=lastCursorX+1, end=width, step=1, y=y)
             if not x < PREFIXlen+1 or y > linesStartingY:
                 if x == 0:
                     y-=1 ; x=width
                 stdscr.move(y, x - 1)
                 codePosition -= 1
+                if   code[:codePosition].count('"') % 2 == 1: inString = ord('"')
+                elif code[:codePosition].count("'") % 2 == 1: inString = ord("'")
+                if codePosition != codeLength:
+                    while code[-1] == ' ': code=code[:-1]
+            else: inString=False
+                
 
         elif c == curses.KEY_RIGHT:
             debugFileOut = True
             if hinted:
+                if x+1 < width: stdscr.delch(y, x+1)
                 hinted=False
-                clear_suggestion(stdscr=stdscr, start=lastCursorX, end=width, step=1, y=y)
+                clear_suggestion(stdscr=stdscr, start=lastCursorX+1, end=width, step=1, y=y)
             if codePosition+1 > codeLength:
                 code+=' '
             codePosition += 1
@@ -502,12 +492,12 @@ def main(stdscr):
                     for nl in code.split(tmpNLSpace):
                         if not tmpFirstLine:
                             stdscr.addstr('\n'+INDENT+SPACE, curses.color_pair(2))
-                        syntaxHighlightString(nl,False)
+                        syntaxHighlightString(nl)
                         if tmpFirstLine: tmpFirstLine = False; inIndent = True
                     codePosition += len(bash_history[history_idx].replace('\n',''))
 
                 else:
-                    syntaxHighlightString(bash_history[history_idx],False)
+                    syntaxHighlightString(bash_history[history_idx])
                     codePosition += len(bash_history[history_idx])
 
         elif c == curses.KEY_DOWN:
@@ -523,7 +513,7 @@ def main(stdscr):
                 else:
                     delete_line(stdscr=stdscr, start=PREFIXlen, end=width - 1, step=1, y=linesStartingY)
                     stdscr.move(linesStartingY, prefaceLEN+1)
-                syntaxHighlightString(bash_history[history_idx],False)
+                syntaxHighlightString(bash_history[history_idx])
                 if inIndent:
                     tmpNLSpace = '\n' + SPACE
                     if code.count(tmpNLSpace) > 0 and code.split(tmpNLSpace)[-1]:
@@ -666,6 +656,7 @@ def main(stdscr):
                     with open('ASnakeREPLCommand.txt', 'w') as f:
                         f.write(compiledCode)
                     remove('ASnakeREPLCommand.lock')
+
                     if firstLine:
                         if isWindows:
                             stdscr.move(y, 0)
@@ -686,7 +677,6 @@ def main(stdscr):
                         del tmp , tmpIndex
                     del tmpCodeYLen
                     firstLine = False
-
                     addByte = False
                     output = ''
                     try:
@@ -715,7 +705,7 @@ def main(stdscr):
                                     output = ''
                             else:
                                 continue
-
+                    
                             for i in range(len(output)):
                                 stdscr.addstr(f"{output[i]}", curses.color_pair(3) if ASError else curses.color_pair(1))
 
@@ -820,12 +810,29 @@ def main(stdscr):
                     stdscr.move(y + 1, x)
                     codePosition = abs((y+1-linesStartingY) * width + x)
                     if y == linesStartingY: codePosition-=PREFIXlen
+        elif c in {34,39}: # string quotes
+            if codePosition == codeLength:
+                code += chrC
+                stdscr.addstr(chrC, curses.color_pair(5))
+                if c == inString:  inString=False
+                elif not inString: inString=c
+            else:
+                if codePosition == 0:
+                    code = chrC + code[codePosition:]
+                else:
+                    code = code[:codePosition] + chr(c) + code[codePosition:]
+                syntaxHighlightString(code[codePosition:])
+                if code.count(chrC) % 2 == 0:
+                      inString=False
+                else: inString=c
+            codePosition+=1
+            stdscr.move(y,x+1)
         elif c in {-1, 410, 337}: pass
         else:
             debugFileOut = True
             if codePosition == codeLength:
-                handleSyntaxHighlighting(c,lastChar=ord(code[-1]) if code else False)
-                code += chr(c)
+                handleSyntaxHighlighting(c,lastChar=ord(code[-1]) if code else False, tmpInString=inString)
+                code += chrC
                 codePosition += 1
                 lastCursorX = x
                 if not inString:
@@ -834,22 +841,23 @@ def main(stdscr):
                     else:
                         # if a space is done on a suggestion, clear the suggestion
                         clear_suggestion(stdscr=stdscr, start=lastCursorX, end=width, step=1, y=y)
-                stdscr.move(y, x+1)
+                if x+1 < width: stdscr.move(y, x+1)
+                else: stdscr.move(y+1,0)
             else:
                 if codePosition == 0:
-                    code = chr(c) + code[codePosition:]
+                    code = chrC + code[codePosition:]
                 else:
-                    code = code[:codePosition] + chr(c) + code[codePosition:]
+                    code = code[:codePosition] + chrC + code[codePosition:]
                 codePosition += 1
                 if len(code)+PREFIXlen < width and not inIndent: # one-line, update in-place
-                    delete_line(stdscr=stdscr, start=x - 1 + len(code[codePosition:]), end=x - 1, step=-1, y=y)
-                    syntaxHighlightString(code[codePosition:])
+                    delete_line(stdscr=stdscr, start=PREFIXlen + len(code[codePosition-1:]), end=width, step=-1, y=y)
+                    syntaxHighlightString(code[codePosition-1:])
                 else: # multi-liner, redraw entire code
-                    redraw(stdscr)
-                
+                    redraw(stdscr)           
+
                 stdscr.move(y, x+1)
                 stdscr.refresh()
-
+        
         if debug and debugFileOut:
             file_out('w', code,f"{codePosition}/{len(code)} x={x} y={y} sy={linesStartingY} bi={history_idx}",extra)
 
