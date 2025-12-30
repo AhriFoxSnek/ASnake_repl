@@ -394,7 +394,7 @@ def main(stdscr):
         elif charC == '#' and not tmpInString:
             stdscr.addstr(charC, CYAN)
             if not tmpInComment and not tmpInString: tmpInComment = True
-            if lastChar and lastChar == '!': tmpInComment = False
+            if lastChar and lastCharC == '!': tmpInComment = False
         elif tmpInComment: 
             stdscr.addstr(charC, CYAN)
             if charC == '\n': tmpInComment = False
@@ -874,7 +874,7 @@ def main(stdscr):
                 code += chrC
                 codePosition += 1
                 lastCursorX = x
-                if not inString:
+                if not inString and not inComment:
                     if code[-1] != ' ':
                         hinted = display_hint(stdscr, y, x, code.split()[-1], lastCursorX, after_appending, hinted, width)
                     else:
