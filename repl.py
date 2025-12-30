@@ -67,7 +67,7 @@ else:
 del sys, compileDict, platform
 
 # constants
-ReplVersion = 'v0.12.0'
+ReplVersion = 'v0.12.1'
 PREFIX = ">>> "
 PREFIXlen = len(PREFIX)
 INDENT = "... "
@@ -234,17 +234,17 @@ def main(stdscr):
     
     # colors
     curses.use_default_colors()
-    curses.init_pair(1, curses.COLOR_WHITE, -1)  # for usual text
-    curses.init_pair(2, curses.COLOR_CYAN, -1)  # for pretty prefix
-    curses.init_pair(3, curses.COLOR_RED, -1) # for scary error
-    curses.init_pair(5, curses.COLOR_GREEN, -1) # for strings
+    curses.init_pair(1, curses.COLOR_WHITE,   -1) # for usual text
+    curses.init_pair(2, curses.COLOR_CYAN,    -1) # for pretty prefix
+    curses.init_pair(3, curses.COLOR_RED,     -1) # for scary error
+    curses.init_pair(5, curses.COLOR_GREEN,   -1) # for strings
     curses.init_pair(6, curses.COLOR_MAGENTA, -1) # for numbers
     if isWindows:
         curses.init_pair(4, curses.COLOR_YELLOW, -1)
     curses.noecho()
     
     # vv debug vars vv
-    debug: bool = False  # enables file output of useful info for debugging
+    debug: bool = False # enables file output of useful info for debugging
     extra = ''
     debugFileOut=False
     debugTryCommands=[]
@@ -266,6 +266,7 @@ def main(stdscr):
     inIndent: bool = False
     currentIndent: int = 0
     inString = False # only values: False 34 39
+    inComment: bool = False
 
     code = ''
     variableInformation = {}
@@ -333,9 +334,9 @@ def main(stdscr):
         xTMP = PREFIXlen
         scrollWhenYOverflow(yTMP, xTMP)
         stdscr.move(yTMP, xTMP)
-        lastChar=False ; tmpInString=False
+        lastChar=tmpInString=tmpInComment=False
         for character in code:
-            tmpInString = handleSyntaxHighlighting(ord(character),ord(lastChar) if lastChar else False,(yTMP,xTMP),tmpInString=tmpInString)
+            tmpInString, tmpInComment = handleSyntaxHighlighting(ord(character),ord(lastChar) if lastChar else False,(yTMP,xTMP),tmpInString=tmpInString,tmpInComment=tmpInComment)
             xTMP += 1
             if xTMP >= width or character == '\n':
                 xTMP = 0; yTMP += 1
@@ -357,19 +358,20 @@ def main(stdscr):
             delete_line(stdscr=stdscr, start=PREFIXlen, end=width, step=1, y=startingY)
         stdscr.move(startingY, PREFIXlen)
 
-    def handleSyntaxHighlighting(c,lastChar=False,customYX=(False,False), tmpInString=False):
+    def handleSyntaxHighlighting(c,lastChar=False,customYX=(False,False), tmpInString=False, tmpInComment=False):
         #nonlocal extra
         # expects one character, in ord()
         tmpY=customYX[0] if customYX[1] else y
         tmpX=customYX[1] if customYX[1] else x
 
-        GREEN = curses.color_pair(5)
+        GREEN   = curses.color_pair(5)
         MAGENTA = curses.color_pair(6)
-        RED = curses.color_pair(3)
+        RED     = curses.color_pair(3)
+        CYAN    = curses.color_pair(2)
 
         charC=chr(c)
         if lastChar: lastCharC=chr(lastChar)
-        if c in {34,39}: # string quotes
+        if c in {34,39} and not tmpInComment: # string quotes
             tmpColor = GREEN
             if lastChar:
                 if lastCharC in 'frb' and customYX[0]:
@@ -381,7 +383,7 @@ def main(stdscr):
             elif c == tmpInString and not (lastChar and lastCharC == '\\'):
                 tmpInString = False
             stdscr.addstr(charC, tmpColor)
-        elif tmpInString:                 
+        elif tmpInString and not tmpInComment:                 
             if charC == '\\':  
                     if (lastChar and lastCharC == '\\') and customYX: 
                           stdscr.move(tmpY, tmpX-1)
@@ -389,22 +391,33 @@ def main(stdscr):
                           stdscr.addstr(charC, GREEN)  
                     else: stdscr.addstr(charC, RED) 
             else:         stdscr.addstr(charC, GREEN)
+        elif charC == '#' and not tmpInString:
+            stdscr.addstr(charC, CYAN)
+            if not tmpInComment and not tmpInString: tmpInComment = True
+            if lastChar and lastChar == '!': tmpInComment = False
+        elif tmpInComment: 
+            stdscr.addstr(charC, CYAN)
+            if charC == '\n': tmpInComment = False
         elif charC in "0123456789" and ((lastChar and lastCharC in "0123456789 .()*+-/,=&^%$#@{}") or not lastChar):
             if lastChar and lastCharC == '.':
                 stdscr.move(tmpY, tmpX-1)
                 stdscr.addstr('.', MAGENTA)
             stdscr.addstr(charC, MAGENTA)
+        elif charC == '$':
+            stdscr.addstr(charC, RED)
         else:
             stdscr.addstr(charC)
-        return tmpInString
+        return tmpInString, tmpInComment
 
     def syntaxHighlightString(theString, lastChar=False, customYX=(False, False)):
         # a loop wrapper for handleSyntaxHighlighting
         tmpInString = inString
         tmpLastChar = lastChar if lastChar else False 
         tmpY, tmpX = customYX
+        tmpInComment = inComment
+        
         for char in theString:
-            tmpInString = handleSyntaxHighlighting(ord(char), lastChar=tmpLastChar, customYX=(tmpY,tmpX), tmpInString=tmpInString)
+            tmpInString, tmpInComment = handleSyntaxHighlighting(ord(char), lastChar=tmpLastChar, customYX=(tmpY,tmpX), tmpInString=tmpInString, tmpInComment=tmpInComment)
             tmpLastChar = ord(char)
             tmpX+=1
             if tmpX > width: 
@@ -627,6 +640,7 @@ def main(stdscr):
 
         elif c in KEY_ENTER:
             debugFileOut = True
+            inComment    = False
 
             if code and code[-1]=='\\':
                 if isWindows:
@@ -770,9 +784,9 @@ def main(stdscr):
                     else:
                         scrollWhenYOverflow(y+1,0)
 
-                inIndent = False
+                inIndent      = False
+                inString      = False
                 currentIndent = 0
-                inString=False
                 y, x = stdscr.getyx()
                 linesStartingY = y
                 stdscr.addstr(PREFIX, curses.color_pair(2))
@@ -848,9 +862,15 @@ def main(stdscr):
             stdscr.move(y,x+1)
         elif c in {-1, 410, 337}: pass
         else:
+            if c in {35, 128173, 128172}: 
+              inComment = True # hashtag, 💬, and 💭. for comments.
+              if code[-1] == '!': inComment = False # escaped comment
+            # ^ actually, unicode/emoji seems broken. a TODO !
+            extra=inComment
+            
             debugFileOut = True
             if codePosition == codeLength:
-                handleSyntaxHighlighting(c,lastChar=ord(code[-1]) if code else False, tmpInString=inString)
+                handleSyntaxHighlighting(c,lastChar=ord(code[-1]) if code else False, tmpInString=inString, tmpInComment=inComment)
                 code += chrC
                 codePosition += 1
                 lastCursorX = x
@@ -860,8 +880,8 @@ def main(stdscr):
                     else:
                         # if a space is done on a suggestion, clear the suggestion
                         clear_suggestion(stdscr=stdscr, start=lastCursorX+1, end=width, step=1, y=y)
-                if x+1 < width: stdscr.move(y, x+1)
-                else: scrollWhenYOverflow(y, 0)
+                if   x+1 < width: stdscr.move(y, x+1)
+                elif y == height: scrollWhenYOverflow(y, 0)
             else:
                 if codePosition == 0:
                     code = chrC + code[codePosition:]
